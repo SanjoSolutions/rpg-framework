@@ -34,7 +34,7 @@ function makeCharacter(id: string, name: string, strangerName?: string): Charact
     id,
     name,
     appearance: "",
-    personality: "",
+    description: "",
     voice: null,
     strangerName: strangerName ?? `Stranger ${id.toUpperCase()}`,
     createdAt: 0,
@@ -189,23 +189,23 @@ describe("parseIntentProposal", () => {
 describe("parseConsentResponse", () => {
   const jenny = makeCharacter("c2", "Jenny")
 
-  it("parses a YES decision with reason", () => {
-    const raw = "DECISION: YES\nREASON: I trust her."
+  it("parses a YES decision with feedback", () => {
+    const raw = "DECISION: YES\nFEEDBACK: I trust her."
     expect(parseConsentResponse(raw, jenny)).toEqual({
       characterId: "c2",
       characterName: "Jenny",
       decision: "yes",
-      reason: "I trust her.",
+      feedback: "I trust her.",
     })
   })
 
-  it("parses a NO decision with reason", () => {
-    const raw = "DECISION: NO\nREASON: I'm not comfortable with that."
+  it("parses a NO decision with feedback", () => {
+    const raw = "DECISION: NO\nFEEDBACK: I'm not comfortable with that."
     expect(parseConsentResponse(raw, jenny)).toEqual({
       characterId: "c2",
       characterName: "Jenny",
       decision: "no",
-      reason: "I'm not comfortable with that.",
+      feedback: "I'm not comfortable with that.",
     })
   })
 

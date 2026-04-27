@@ -23,7 +23,7 @@ function applySchema(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       appearance TEXT NOT NULL DEFAULT '',
-      personality TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
       voice TEXT,
       stranger_name TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
@@ -131,6 +131,11 @@ function applySchema(db: Database.Database): void {
   const columnNames = new Set(characterColumns.map((c) => c.name))
   if (columnNames.has("description") && !columnNames.has("appearance")) {
     db.exec("ALTER TABLE characters RENAME COLUMN description TO appearance")
+    columnNames.delete("description")
+    columnNames.add("appearance")
+  }
+  if (columnNames.has("personality") && !columnNames.has("description")) {
+    db.exec("ALTER TABLE characters RENAME COLUMN personality TO description")
   }
   if (!columnNames.has("stranger_name")) {
     db.exec("ALTER TABLE characters ADD COLUMN stranger_name TEXT NOT NULL DEFAULT ''")

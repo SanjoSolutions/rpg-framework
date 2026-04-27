@@ -25,8 +25,8 @@ export default function CharactersPage() {
                 className="block rounded-xl border border-border p-4 hover:bg-accent"
               >
                 <h2 className="font-semibold">{c.name}</h2>
-                {c.appearance && (
-                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{c.appearance}</p>
+                {c.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{c.description}</p>
                 )}
               </Link>
             </li>

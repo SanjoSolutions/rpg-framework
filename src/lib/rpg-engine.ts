@@ -50,8 +50,8 @@ function describeCharacterFull(character: Character): string {
   if (character.appearance.trim()) {
     parts.push(`Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`)
   }
-  if (character.personality.trim()) {
-    parts.push(`Personality: ${shiftMarkdownHeadings(character.personality, 4)}`)
+  if (character.description.trim()) {
+    parts.push(`Description: ${shiftMarkdownHeadings(character.description, 4)}`)
   }
   return parts.join("\n")
 }
@@ -744,12 +744,12 @@ export async function requestConsent(args: {
     target.appearance.trim()
       ? `Appearance: ${shiftMarkdownHeadings(target.appearance, 2)}`
       : "",
-    target.personality.trim()
-      ? `Personality: ${shiftMarkdownHeadings(target.personality, 2)}`
+    target.description.trim()
+      ? `Description: ${shiftMarkdownHeadings(target.description, 2)}`
       : "",
     `${speakerLabel} is about to act on you in the scene. You are the RECIPIENT, not the actor — ${speakerLabel} performs the action; you only decide whether to allow it.`,
     `The proposed action below is written in ${speakerLabel}'s own first-person voice. Any "I", "me", or "my" in it refers to ${speakerLabel}, NEVER to you. You will not carry out the action — ${speakerLabel} will.`,
-    "Refuse if your character would not want this done to them, given their personality, the situation, and what just happened.",
+    "Refuse if your character would not want this done to them, given who they are, the situation, and what just happened.",
     "Output strictly in this format and nothing else:",
     "DECISION: YES or NO",
     "REASON: <one short sentence of your private inner reasoning, shown ONLY to the user — not spoken aloud, not shared with the speaker or any other character, not to be revealed in the scene>",
@@ -869,8 +869,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           character.appearance.trim()
             ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 2)}`
             : "",
-          character.personality.trim()
-            ? `Personality: ${shiftMarkdownHeadings(character.personality, 2)}`
+          character.description.trim()
+            ? `Description: ${shiftMarkdownHeadings(character.description, 2)}`
             : "",
         ]
           .filter(Boolean)

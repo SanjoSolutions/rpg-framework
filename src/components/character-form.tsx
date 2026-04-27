@@ -18,7 +18,7 @@ export function CharacterForm({ mode, character }: Props) {
   const router = useRouter()
   const [name, setName] = useState(character?.name ?? "")
   const [appearance, setAppearance] = useState(character?.appearance ?? "")
-  const [personality, setPersonality] = useState(character?.personality ?? "")
+  const [description, setDescription] = useState(character?.description ?? "")
   const [voice, setVoice] = useState(character?.voice ?? "")
   const [strangerName, setStrangerName] = useState(character?.strangerName ?? "")
   const [submitting, setSubmitting] = useState(false)
@@ -26,10 +26,10 @@ export function CharacterForm({ mode, character }: Props) {
 
   const nameRef = useRef<HTMLInputElement>(null)
   const appearanceRef = useRef<HTMLTextAreaElement>(null)
-  const personalityRef = useRef<HTMLTextAreaElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const voiceRef = useRef<HTMLInputElement>(null)
 
-  const getEntity = () => ({ name, appearance, personality, voice })
+  const getEntity = () => ({ name, appearance, description, voice })
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -39,7 +39,7 @@ export function CharacterForm({ mode, character }: Props) {
       const body = JSON.stringify({
         name,
         appearance,
-        personality,
+        description,
         voice: voice.trim() || null,
         strangerName: strangerName.trim() || null,
       })
@@ -122,22 +122,22 @@ export function CharacterForm({ mode, character }: Props) {
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="personality">Personality</Label>
+          <Label htmlFor="description">Description</Label>
           <AssistButton
             entityType="character"
-            field="personality"
-            fieldLabel="Personality"
+            field="description"
+            fieldLabel="Description"
             getEntity={getEntity}
-            targetRef={personalityRef}
+            targetRef={descriptionRef}
           />
         </div>
         <Textarea
-          id="personality"
-          ref={personalityRef}
-          value={personality}
-          onChange={(e) => setPersonality(e.target.value)}
+          id="description"
+          ref={descriptionRef}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           rows={6}
-          placeholder="Mannerisms, voice, mood, motivations…"
+          placeholder="Personality, mannerisms, voice, mood, motivations, history, secrets, anything else worth knowing…"
         />
       </div>
       <div className="space-y-2">

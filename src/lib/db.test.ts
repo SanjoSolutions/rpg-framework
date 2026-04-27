@@ -30,7 +30,7 @@ describe("characters repository", () => {
     const created = createCharacter({
       name: "  Aria  ",
       appearance: "A bard",
-      personality: "Witty",
+      description: "Witty",
       voice: " Eve ",
     })
     expect(created.name).toBe("Aria")
@@ -41,12 +41,12 @@ describe("characters repository", () => {
     expect(all[0].id).toBe(created.id)
 
     const fetched = getCharacter(created.id)
-    expect(fetched?.personality).toBe("Witty")
+    expect(fetched?.description).toBe("Witty")
 
     const updated = updateCharacter(created.id, {
       name: "Aria the Bold",
       appearance: "A bard",
-      personality: "Witty",
+      description: "Witty",
       voice: null,
     })
     expect(updated?.name).toBe("Aria the Bold")

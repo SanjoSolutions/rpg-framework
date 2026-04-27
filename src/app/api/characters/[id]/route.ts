@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 const characterSchema = z.object({
   name: z.string().trim().min(1).max(120),
   appearance: z.string().max(4000).optional(),
-  personality: z.string().max(8000).optional(),
+  description: z.string().max(8000).optional(),
   voice: z.string().max(120).nullable().optional(),
   strangerName: z.string().max(120).nullable().optional(),
 })
