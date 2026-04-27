@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { pickNextSpeaker } from "./rpg-engine"
+import { parseSpeakerCandidates, pickNextSpeaker } from "./rpg-engine"
 import type { Character } from "./characters"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
@@ -72,5 +72,40 @@ describe("pickNextSpeaker", () => {
       messages: [lastTurn],
     })
     expect(speaker).toEqual({ kind: "character", characterId: "c2", name: "Jenny" })
+  })
+})
+
+describe("parseSpeakerCandidates", () => {
+  const aria = makeCharacter("c1", "Aria")
+  const jenny = makeCharacter("c2", "Jenny")
+  const rex = makeCharacter("c3", "Rex")
+  const eligible = [aria, jenny, rex]
+
+  it("returns a single match when the LLM outputs one id", () => {
+    expect(parseSpeakerCandidates("c2", eligible)).toEqual([jenny])
+  })
+
+  it("returns multiple matches for a comma-separated list", () => {
+    expect(parseSpeakerCandidates("c1, c3", eligible)).toEqual([aria, rex])
+  })
+
+  it("handles whitespace, newlines, and stray punctuation between ids", () => {
+    expect(parseSpeakerCandidates("`c1` or c2.", eligible)).toEqual([aria, jenny])
+  })
+
+  it("dedupes repeated ids", () => {
+    expect(parseSpeakerCandidates("c1, c1, c2", eligible)).toEqual([aria, jenny])
+  })
+
+  it("ignores ids that are not in the eligible roster", () => {
+    expect(parseSpeakerCandidates("c1, c99", eligible)).toEqual([aria])
+  })
+
+  it("falls back to name matching when no ids are present", () => {
+    expect(parseSpeakerCandidates("Aria or Jenny", eligible)).toEqual([aria, jenny])
+  })
+
+  it("returns an empty array when nothing matches", () => {
+    expect(parseSpeakerCandidates("nobody", eligible)).toEqual([])
   })
 })

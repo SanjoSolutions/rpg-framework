@@ -82,11 +82,42 @@ function baseSceneBlock(context: SceneContext, messages: Message[] | null): stri
   return sections.join("\n\n")
 }
 
+export function parseSpeakerCandidates(raw: string, eligible: Character[]): Character[] {
+  const cleaned = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").trim()
+  if (!cleaned) return []
+
+  const tokens = cleaned
+    .split(/[\s,;|/]+/)
+    .map((t) => t.replace(/^[`"'(\[]+|[`"')\].,;:]+$/g, "").trim())
+    .filter(Boolean)
+
+  const seen = new Set<string>()
+  const matched: Character[] = []
+  for (const token of tokens) {
+    const c = eligible.find((e) => e.id === token)
+    if (c && !seen.has(c.id)) {
+      seen.add(c.id)
+      matched.push(c)
+    }
+  }
+  if (matched.length > 0) return matched
+
+  const lower = cleaned.toLowerCase()
+  for (const c of eligible) {
+    if (lower.includes(c.name.toLowerCase()) && !seen.has(c.id)) {
+      seen.add(c.id)
+      matched.push(c)
+    }
+  }
+  return matched
+}
+
 export async function pickNextSpeaker(args: {
   backend: LLMBackend
   context: SceneContext
   messages: Message[]
   signal?: AbortSignal
+  rng?: () => number
 }): Promise<SpeakerSelection> {
   const { context, messages } = args
 
@@ -113,15 +144,17 @@ export async function pickNextSpeaker(args: {
 
   const system = [
     "You are the director of a collaborative roleplay scene.",
-    "Pick exactly one of the listed characters to speak or act next, based on the recent transcript and who would naturally take the next turn.",
-    "Output strictly the character's id, with no prose, no quotes, and no explanation.",
+    "Choose which of the listed characters should speak or act next, based on the recent transcript.",
+    "If exactly one character is the natural choice, output only that character's id.",
+    "If multiple characters could plausibly take the next turn, output a comma-separated list of their ids — one will be chosen at random.",
+    "Output strictly the ids, with no prose, no quotes, and no explanation.",
   ].join(" ")
 
   const prompt = [
     baseSceneBlock(context, messages),
     "## Roster (eligible speakers)",
     roster,
-    "Respond with only the chosen character id.",
+    "Respond with a comma-separated list of one or more eligible character ids.",
   ].join("\n\n")
 
   const raw = await generateOnce({
@@ -131,15 +164,16 @@ export async function pickNextSpeaker(args: {
     signal: args.signal,
   })
 
-  const cleaned = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").trim()
-  const match = eligible.find((c) => c.id === cleaned)
-  if (match) return { kind: "character", characterId: match.id, name: match.name }
+  const candidates = parseSpeakerCandidates(raw, eligible)
+  const pool = candidates.length > 0 ? candidates : [eligible[0]]
+  const chosen = selectRandom(pool, args.rng)
+  return { kind: "character", characterId: chosen.id, name: chosen.name }
+}
 
-  const fallback = eligible.find((c) => cleaned.toLowerCase().includes(c.name.toLowerCase()))
-  if (fallback) return { kind: "character", characterId: fallback.id, name: fallback.name }
-
-  const first = eligible[0]
-  return { kind: "character", characterId: first.id, name: first.name }
+export function selectRandom<T>(items: readonly T[], rng: () => number = Math.random): T {
+  if (items.length === 0) throw new Error("selectRandom: items must not be empty")
+  const index = Math.floor(rng() * items.length) % items.length
+  return items[index]
 }
 
 export interface StreamCharacterTurnArgs {
