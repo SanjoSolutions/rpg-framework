@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { getCharacter } from "@/lib/characters"
-import { listMemoriesForScene } from "@/lib/memories"
+import { getCharacter, listCharacters } from "@/lib/characters"
+import { extractReferencedCharacterIds, listMemoriesForScene } from "@/lib/memories"
 import { getScenario } from "@/lib/scenarios"
 
 export const runtime = "nodejs"
@@ -25,5 +25,17 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: st
     }),
   }))
 
-  return NextResponse.json({ byCharacter })
+  const referencedIds = new Set<string>()
+  for (const group of byCharacter) {
+    for (const memory of group.memories) {
+      for (const refId of extractReferencedCharacterIds(memory.content)) referencedIds.add(refId)
+      for (const assocId of memory.associatedCharacterIds) referencedIds.add(assocId)
+    }
+  }
+  const nameById: Record<string, string> = {}
+  for (const c of listCharacters()) {
+    if (referencedIds.has(c.id)) nameById[c.id] = c.name
+  }
+
+  return NextResponse.json({ byCharacter, nameById })
 }

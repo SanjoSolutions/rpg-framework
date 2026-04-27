@@ -8,6 +8,7 @@ import { useDevSidebar } from "@/hooks/use-dev-sidebar"
 import { useSettings } from "@/hooks/use-settings"
 import type { Character } from "@/lib/characters"
 import type { Memory } from "@/lib/memories"
+import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 
 interface SpeakerInfo {
@@ -78,6 +79,7 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
   const [sceneMemories, setSceneMemories] = useState<
     { characterId: string; characterName: string; memories: Memory[] }[]
   >([])
+  const [memoryNameById, setMemoryNameById] = useState<Record<string, string>>({})
   const abortRef = useRef<AbortController | null>(null)
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -97,8 +99,10 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
       if (!res.ok) return
       const data = (await res.json()) as {
         byCharacter: { characterId: string; characterName: string; memories: Memory[] }[]
+        nameById?: Record<string, string>
       }
       setSceneMemories(data.byCharacter)
+      setMemoryNameById(data.nameById ?? {})
     } catch {
       // ignore
     }
@@ -376,7 +380,7 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
         </div>
         {showMemories && (
           <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">
-            <SceneMemoriesPanel groups={sceneMemories} />
+            <SceneMemoriesPanel groups={sceneMemories} nameById={memoryNameById} />
           </aside>
         )}
       </div>
@@ -426,8 +430,10 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
 
 function SceneMemoriesPanel({
   groups,
+  nameById,
 }: {
   groups: { characterId: string; characterName: string; memories: Memory[] }[]
+  nameById: Record<string, string>
 }) {
   const nonEmpty = groups.filter((g) => g.memories.length > 0)
   if (nonEmpty.length === 0) {
@@ -437,6 +443,7 @@ function SceneMemoriesPanel({
       </div>
     )
   }
+  const resolveName = (id: string) => nameById[id] ?? id
   return (
     <div className="space-y-3">
       <div className="text-xs font-medium text-muted-foreground">Scene-relevant memories</div>
@@ -446,7 +453,7 @@ function SceneMemoriesPanel({
           <ul className="text-xs text-muted-foreground space-y-1">
             {g.memories.map((m) => (
               <li key={m.id} className="border-l border-border pl-2">
-                <div>{m.content}</div>
+                <div>{renderMemoryContent(m.content, resolveName)}</div>
                 <div className="text-[10px] opacity-70">{formatMemoryTimestamp(m.createdAt)}</div>
               </li>
             ))}
