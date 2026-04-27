@@ -41,22 +41,24 @@ function buildHistory(messages: Message[]): string {
     .join("\n")
 }
 
-function baseSceneBlock(context: SceneContext, messages: Message[]): string {
+function baseSceneBlock(context: SceneContext, messages: Message[] | null): string {
   const characterBlock =
     context.characters.length > 0
       ? context.characters.map(describeCharacter).join("\n\n")
       : "(no characters in this scenario yet)"
   const summary = context.scenario.summary.trim() || "(no scenario summary)"
-  return [
+  const sections = [
     `# Scenario: ${context.scenario.name}`,
     `Summary: ${summary}`,
     `## Location`,
     describeLocation(context.location),
     `## Characters present`,
     characterBlock,
-    `## Recent transcript`,
-    buildHistory(messages),
-  ].join("\n\n")
+  ]
+  if (messages !== null) {
+    sections.push(`## Recent transcript`, buildHistory(messages))
+  }
+  return sections.join("\n\n")
 }
 
 export async function pickNextSpeaker(args: {
@@ -156,7 +158,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const system = [
     speakerInstructions,
     "",
-    baseSceneBlock(context, messages),
+    baseSceneBlock(context, null),
   ].join("\n")
 
   const chatMessages: ChatMessage[] = messages.map((m) => {
@@ -164,7 +166,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
     }
     if (m.speakerKind === "narrator") {
-      return { role: "assistant", content: `[Narrator]: ${m.content}` }
+      return { role: "user", content: `[Narrator]: ${m.content}` }
     }
     if (character && m.speakerId === character.id) {
       return { role: "assistant", content: m.content }

@@ -117,7 +117,10 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
             ) {
               const character = characters.find((c) => c.id === p.characterId)
               if (character?.voice) {
-                sentenceSpeakerRef.current = new SentenceSpeaker(speakerPrefix(p.characterId))
+                sentenceSpeakerRef.current = new SentenceSpeaker(
+                  speakerPrefix(p.characterId),
+                  character.voice,
+                )
               }
             }
           } else if (event === "delta" && speaker) {
@@ -312,7 +315,7 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
     if (fellBack) return
     fellBack = true
     onServerFailure()
-    const speaker = new SentenceSpeaker(prefix)
+    const speaker = new SentenceSpeaker(prefix, voice)
     speaker.push(text)
     speaker.flush()
   }
@@ -325,12 +328,51 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   }
 }
 
+type Gender = "male" | "female"
+
+const GROK_VOICE_GENDER: Record<string, Gender> = {
+  ara: "female",
+  eve: "female",
+  leo: "male",
+  rex: "male",
+  sal: "male",
+}
+
+const FEMALE_NAME_HINT =
+  /\b(samantha|zira|hazel|victoria|allison|tessa|moira|fiona|veena|karen|susan|catherine|linda|heather|kate|vicki|aria|jenny|amy|emma|nicole|sandy|lisa|amelia|joanna|kendra|kimberly|salli|ivy|raveena|aditi)\b/i
+const MALE_NAME_HINT =
+  /\b(david|mark|alex|daniel|fred|tom|matthew|justin|joey|brian|kevin|aaron|albert|guy|ryan|eric|james|jacob|liam|noah|william|bruce|junior)\b/i
+
+function voiceMatchesGender(voice: SpeechSynthesisVoice, gender: Gender): boolean {
+  const name = voice.name.toLowerCase()
+  if (name.includes("female")) return gender === "female"
+  if (name.includes("male")) return gender === "male"
+  if (FEMALE_NAME_HINT.test(voice.name)) return gender === "female"
+  if (MALE_NAME_HINT.test(voice.name)) return gender === "male"
+  return false
+}
+
+function pickBrowserVoice(gender: Gender): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null
+  const voices = window.speechSynthesis.getVoices()
+  if (voices.length === 0) return null
+  const english = voices.filter((v) => v.lang.toLowerCase().startsWith("en"))
+  const pool = english.length > 0 ? english : voices
+  return pool.find((v) => voiceMatchesGender(v, gender)) ?? null
+}
+
 class SentenceSpeaker {
   private spokenChars = 0
   private buffer = ""
   private firstEmitted = false
+  private gender: Gender | null
 
-  constructor(private prefix = "") {}
+  constructor(
+    private prefix = "",
+    grokVoice = "",
+  ) {
+    this.gender = GROK_VOICE_GENDER[grokVoice.toLowerCase()] ?? null
+  }
 
   push(fullText: string): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return
@@ -359,6 +401,11 @@ class SentenceSpeaker {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return
     const out = !this.firstEmitted && this.prefix ? `${this.prefix}: ${text}` : text
     this.firstEmitted = true
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(out))
+    const utterance = new SpeechSynthesisUtterance(out)
+    if (this.gender) {
+      const matched = pickBrowserVoice(this.gender)
+      if (matched) utterance.voice = matched
+    }
+    window.speechSynthesis.speak(utterance)
   }
 }
