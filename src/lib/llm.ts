@@ -26,6 +26,15 @@ interface StreamOptions {
 
 export async function streamChat(options: StreamOptions): Promise<void> {
   const truncated = options.messages.slice(-MAX_HISTORY_MESSAGES)
+  logger.info(
+    {
+      backend: options.backend,
+      mode: "stream",
+      system: options.system,
+      messages: truncated,
+    },
+    "LLM request",
+  )
   if (options.backend === "nemomix-local") {
     await streamNemomix({ ...options, messages: truncated })
   } else {
@@ -116,6 +125,15 @@ interface GenerateOptions {
 }
 
 export async function generateOnce(options: GenerateOptions): Promise<string> {
+  logger.info(
+    {
+      backend: options.backend,
+      mode: "once",
+      system: options.system,
+      prompt: options.prompt,
+    },
+    "LLM request",
+  )
   if (options.backend === "nemomix-local") {
     const baseUrl = (process.env.NEMOMIX_LOCAL_URL ?? DEFAULT_NEMOMIX_URL).replace(/\/$/, "")
     const messages: { role: "system" | "user"; content: string }[] = []

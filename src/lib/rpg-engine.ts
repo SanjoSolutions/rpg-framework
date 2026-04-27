@@ -16,17 +16,37 @@ export interface SpeakerSelection {
   name: string
 }
 
+function shiftMarkdownHeadings(text: string, minLevel: number): string {
+  const headingRegex = /^(#{1,6})(?=\s)/gm
+  let smallest = Number.POSITIVE_INFINITY
+  for (const match of text.matchAll(headingRegex)) {
+    if (match[1].length < smallest) smallest = match[1].length
+  }
+  if (!Number.isFinite(smallest)) return text
+  const shift = Math.max(0, minLevel - smallest)
+  if (shift === 0) return text
+  return text.replace(headingRegex, (_, hashes: string) =>
+    "#".repeat(Math.min(6, hashes.length + shift)),
+  )
+}
+
 function describeLocation(location: Location | null): string {
   if (!location) return "(no location set)"
   const parts = [`Name: ${location.name}`]
-  if (location.description.trim()) parts.push(`Description: ${location.description}`)
+  if (location.description.trim()) {
+    parts.push(`Description: ${shiftMarkdownHeadings(location.description, 3)}`)
+  }
   return parts.join("\n")
 }
 
 function describeCharacter(character: Character): string {
   const parts = [`### ${character.name}`]
-  if (character.description.trim()) parts.push(`Description: ${character.description}`)
-  if (character.personality.trim()) parts.push(`Personality: ${character.personality}`)
+  if (character.description.trim()) {
+    parts.push(`Description: ${shiftMarkdownHeadings(character.description, 4)}`)
+  }
+  if (character.personality.trim()) {
+    parts.push(`Personality: ${shiftMarkdownHeadings(character.personality, 4)}`)
+  }
   return parts.join("\n")
 }
 
@@ -46,7 +66,8 @@ function baseSceneBlock(context: SceneContext, messages: Message[] | null): stri
     context.characters.length > 0
       ? context.characters.map(describeCharacter).join("\n\n")
       : "(no characters in this scenario yet)"
-  const summary = context.scenario.summary.trim() || "(no scenario summary)"
+  const rawSummary = context.scenario.summary.trim()
+  const summary = rawSummary ? shiftMarkdownHeadings(rawSummary, 2) : "(no scenario summary)"
   const sections = [
     `# Scenario: ${context.scenario.name}`,
     `Summary: ${summary}`,
@@ -137,15 +158,34 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       ? context.characters.find((c) => c.id === speaker.characterId) ?? null
       : null
 
+  const otherNames =
+    character != null
+      ? context.characters.filter((c) => c.id !== character.id).map((c) => c.name)
+      : []
+  const labelExample =
+    character != null
+      ? otherNames.length > 0
+        ? `(e.g. "${character.name}: " or "${otherNames[0]}: ")`
+        : `(e.g. "${character.name}: ")`
+      : ""
+  const otherCharactersRule =
+    otherNames.length > 0
+      ? `NEVER write dialogue for ${otherNames.join(" or ")}, and NEVER describe their actions, expressions, or thoughts — write only your own words and your own actions as ${character?.name ?? ""}.`
+      : ""
+
   const speakerInstructions =
     character != null
       ? [
           `You are ${character.name}.`,
-          character.description.trim() ? `Description: ${character.description}` : "",
-          character.personality.trim() ? `Personality: ${character.personality}` : "",
-          "Respond in first person, in character. One short turn — a few sentences at most. Mix dialogue with brief actions or observations as appropriate.",
-          "Do not narrate other characters' lines or thoughts.",
-          "Do not prefix your reply with your name or any speaker label.",
+          character.description.trim()
+            ? `Description: ${shiftMarkdownHeadings(character.description, 2)}`
+            : "",
+          character.personality.trim()
+            ? `Personality: ${shiftMarkdownHeadings(character.personality, 2)}`
+            : "",
+          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with brief actions or observations as appropriate.",
+          `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
+          otherCharactersRule,
         ]
           .filter(Boolean)
           .join("\n")
