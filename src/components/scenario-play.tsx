@@ -89,6 +89,8 @@ export function ScenarioPlay({
     seedMessageConsents(initialMessageMeta),
   )
   const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
+  const runningRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
   const [sceneMemories, setSceneMemories] = useState<
@@ -479,6 +481,8 @@ export function ScenarioPlay({
   }
 
   function stop() {
+    runningRef.current = false
+    setRunning(false)
     abortRef.current?.abort()
     abortRef.current = null
     setBusy(false)
@@ -493,6 +497,19 @@ export function ScenarioPlay({
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel()
     }
+  }
+
+  async function startLoop() {
+    if (runningRef.current) return
+    if (!hasCharacters) return
+    runningRef.current = true
+    setRunning(true)
+    while (runningRef.current && hasCharacters) {
+      await generateTurn()
+      if (!runningRef.current) break
+    }
+    runningRef.current = false
+    setRunning(false)
   }
 
   async function clearTranscript() {
@@ -600,15 +617,23 @@ export function ScenarioPlay({
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            {busy && (
-              <Button type="button" variant="outline" size="sm" onClick={stop}>
+            {running || busy ? (
+              <Button type="button" variant="outline" onClick={stop}>
                 Stop
               </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  void startLoop()
+                }}
+                disabled={!hasCharacters}
+              >
+                Start
+              </Button>
             )}
-            <Button type="button" variant="secondary" onClick={generateTurn} disabled={busy || !hasCharacters}>
-              Next turn
-            </Button>
-            <Button type="submit" disabled={busy || !input.trim()}>
+            <Button type="submit" disabled={busy || running || !input.trim()}>
               Send
             </Button>
           </div>
