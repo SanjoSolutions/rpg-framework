@@ -89,7 +89,7 @@ export interface ConsentEventMeta {
   characterId: string
   characterName: string
   decision: "yes" | "no"
-  reason: string
+  feedback: string
 }
 
 export interface MessageAttempt {

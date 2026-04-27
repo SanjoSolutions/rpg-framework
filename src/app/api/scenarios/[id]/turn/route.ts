@@ -260,14 +260,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   characterId: decision.characterId,
                   characterName: decision.characterName,
                   decision: decision.decision,
-                  reason: decision.reason,
+                  feedback: decision.feedback,
                 })
                 if (decision.decision === "no") {
                   refusedTargetIds.push(target.id)
                   collected.push({
                     characterId: decision.characterId,
                     characterName: decision.characterName,
-                    reason: decision.reason,
+                    feedback: decision.feedback,
                   })
                 }
               }
@@ -285,6 +285,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               previousAttempts.push({
                 intent: proposal.intent,
                 refusedTargetIds,
+                feedback: collected.map((c) => ({
+                  characterId: c.characterId,
+                  feedback: c.feedback,
+                })),
               })
 
               if (attempt === MAX_CONSENT_ATTEMPTS - 1) {

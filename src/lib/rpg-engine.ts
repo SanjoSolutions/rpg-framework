@@ -313,6 +313,7 @@ export function parseIntentProposal(
 export interface PreviousAttempt {
   intent: string
   refusedTargetIds: string[]
+  feedback: { characterId: string; feedback: string }[]
 }
 
 export interface POVKnowledge {
@@ -354,16 +355,22 @@ export async function proposeIntent(args: {
     previousAttempts && previousAttempts.length > 0
       ? [
           "## Previous attempts THIS TURN — already refused",
-          ...previousAttempts.map((a) => {
+          ...previousAttempts.flatMap((a) => {
             const refusedAliases = a.refusedTargetIds
               .map((id) => {
                 const c = context.characters.find((cc) => cc.id === id)
                 return labelFor(id, c?.name ?? id, aliases)
               })
               .join(", ")
-            return `- "${a.intent}" → refused by ${refusedAliases}`
+            const lines: string[] = [`- "${a.intent}" → refused by ${refusedAliases}`]
+            for (const fb of a.feedback) {
+              const c = context.characters.find((cc) => cc.id === fb.characterId)
+              const alias = labelFor(fb.characterId, c?.name ?? fb.characterId, aliases)
+              lines.push(`    ${alias} feedback: ${fb.feedback}`)
+            }
+            return lines
           }),
-          "Choose something DIFFERENT now. Either a new physical action they would actually consent to, OR a non-physical action (talking, gesturing, leaving — INVOLVES: NONE). Do NOT repeat any refused intent.",
+          "Use the feedback above to choose something DIFFERENT now. Either a new physical action they would actually consent to, OR a non-physical action (talking, gesturing, leaving — INVOLVES: NONE). Do NOT repeat any refused intent.",
         ].join("\n")
       : ""
 
@@ -400,7 +407,7 @@ export interface ConsentDecision {
   characterId: string
   characterName: string
   decision: "yes" | "no"
-  reason: string
+  feedback: string
 }
 
 export function parseConsentResponse(
@@ -409,16 +416,16 @@ export function parseConsentResponse(
 ): ConsentDecision {
   const lines = raw.split(/\r?\n/)
   let decisionWord = ""
-  let reason = ""
+  let feedback = ""
   for (const line of lines) {
     const decisionMatch = /^\s*DECISION\s*:\s*(.+?)\s*$/i.exec(line)
     if (decisionMatch && !decisionWord) {
       decisionWord = decisionMatch[1].trim()
       continue
     }
-    const reasonMatch = /^\s*REASON\s*:\s*(.+?)\s*$/i.exec(line)
-    if (reasonMatch && !reason) {
-      reason = reasonMatch[1].trim()
+    const feedbackMatch = /^\s*FEEDBACK\s*:\s*(.+?)\s*$/i.exec(line)
+    if (feedbackMatch && !feedback) {
+      feedback = feedbackMatch[1].trim()
     }
   }
   if (!decisionWord) decisionWord = raw.trim()
@@ -427,12 +434,12 @@ export function parseConsentResponse(
   const yes = /^y(es|eah|up|ep)?\b/.test(lower) || /\bconsent(s|ed)?\b/.test(lower)
   const no = /^n(o|ope|ah)?\b/.test(lower) || /\brefus|declin|object/.test(lower)
   const decision: "yes" | "no" = yes && !no ? "yes" : "no"
-  if (!reason) reason = decision === "yes" ? "Agrees." : "Declines."
+  if (!feedback) feedback = decision === "yes" ? "Agrees." : "Declines."
   return {
     characterId: character.id,
     characterName: character.name,
     decision,
-    reason,
+    feedback,
   }
 }
 
@@ -752,7 +759,7 @@ export async function requestConsent(args: {
     "Refuse if your character would not want this done to them, given who they are, the situation, and what just happened.",
     "Output strictly in this format and nothing else:",
     "DECISION: YES or NO",
-    "REASON: <one short sentence of your private inner reasoning, shown ONLY to the user — not spoken aloud, not shared with the speaker or any other character, not to be revealed in the scene>",
+    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character feedback on the proposed action, which they will receive before they take their turn so they can adjust. Not spoken aloud in the scene; treat it as out-of-character signaling between characters.>`,
   ]
     .filter(Boolean)
     .join("\n")
@@ -776,7 +783,7 @@ export async function requestConsent(args: {
 export interface ConsentRefusal {
   characterId: string
   characterName: string
-  reason: string
+  feedback: string
 }
 
 export interface StreamCharacterTurnArgs {
@@ -830,7 +837,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const refusalLines = (refusals ?? [])
     .map((r) => {
       const alias = aliases ? labelFor(r.characterId, r.characterName, aliases) : r.characterName
-      return `- ${alias} declined.`
+      return `- ${alias} declined — feedback: ${r.feedback}`
     })
     .join("\n")
   const intentLine = intent?.trim() ? `Your negotiated intent for this turn: ${intent.trim()}` : ""

@@ -28,7 +28,7 @@ interface ConsentEvent {
   speakerName: string
   intent: string
   decision: "yes" | "no" | null
-  reason: string | null
+  feedback: string | null
 }
 
 interface AttemptUI {
@@ -60,7 +60,7 @@ function seedMessageConsents(
         speakerName: a.intent.speakerName,
         intent: a.intent.intent,
         decision: c.decision,
-        reason: c.reason,
+        feedback: c.feedback,
       })),
     }))
   }
@@ -96,6 +96,7 @@ export function ScenarioPlay({
   const [memoryNameById, setMemoryNameById] = useState<Record<string, string>>({})
   const abortRef = useRef<AbortController | null>(null)
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const pendingAttemptsRef = useRef<AttemptUI[]>([])
   const turnGenRef = useRef(0)
@@ -147,6 +148,22 @@ export function ScenarioPlay({
       .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : { available: false }))
       .then((d) => setServerTtsAvailable(d.available))
       .catch(() => setServerTtsAvailable(false))
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      abortRef.current = null
+      sentenceSpeakerRef.current = null
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+        audioRef.current = null
+      }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
   }, [])
 
   const refreshSceneMemories = useCallback(async () => {
@@ -253,7 +270,7 @@ export function ScenarioPlay({
               speakerName: p.speakerName,
               intent: p.intent,
               decision: null,
-              reason: null,
+              feedback: null,
             }
             const lastIndex = pendingAttemptsRef.current.length - 1
             if (lastIndex >= 0) {
@@ -266,7 +283,7 @@ export function ScenarioPlay({
             const p = payload as {
               characterId: string
               decision: "yes" | "no"
-              reason: string
+              feedback: string
             }
             const lastIndex = pendingAttemptsRef.current.length - 1
             if (lastIndex >= 0) {
@@ -276,7 +293,7 @@ export function ScenarioPlay({
                       ...a,
                       consents: a.consents.map((c) =>
                         c.id === p.characterId
-                          ? { ...c, decision: p.decision, reason: p.reason }
+                          ? { ...c, decision: p.decision, feedback: p.feedback }
                           : c,
                       ),
                     }
@@ -334,6 +351,7 @@ export function ScenarioPlay({
                   text: message.content,
                   prefix: speakerPrefix(message.speakerId),
                   onServerFailure: () => setServerTtsAvailable(false),
+                  audioRef,
                 }).catch(() => {})
               }
             }
@@ -401,6 +419,11 @@ export function ScenarioPlay({
     setBusy(false)
     setPendingTurn(null)
     sentenceSpeakerRef.current = null
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ""
+      audioRef.current = null
+    }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel()
     }
@@ -677,7 +700,7 @@ function ConsentNote({ consent }: { consent: ConsentEvent }) {
   return (
     <div className={`rounded-md border border-dashed px-3 py-2 text-xs ${colorClass}`}>
       <span className="font-medium">{consent.targetName}</span> {decisionLabel}
-      {consent.reason && <span className="italic">: {consent.reason}</span>}
+      {consent.feedback && <span className="italic">: {consent.feedback}</span>}
     </div>
   )
 }
@@ -713,17 +736,28 @@ interface PlayVoiceArgs {
   text: string
   prefix: string
   onServerFailure: () => void
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>
 }
 
 async function playVoice(args: PlayVoiceArgs): Promise<void> {
-  const { voice, text, prefix, onServerFailure } = args
+  const { voice, text, prefix, onServerFailure, audioRef } = args
   const spoken = prefix ? `${prefix}: ${text}` : text
   const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(spoken)}`
   const audio = new Audio(url)
+  if (audioRef.current) {
+    audioRef.current.pause()
+    audioRef.current.src = ""
+  }
+  audioRef.current = audio
+  const release = () => {
+    if (audioRef.current === audio) audioRef.current = null
+  }
+  audio.addEventListener("ended", release, { once: true })
   let fellBack = false
   const fallback = () => {
     if (fellBack) return
     fellBack = true
+    release()
     onServerFailure()
     const speaker = new SentenceSpeaker(prefix, voice)
     speaker.push(text)
