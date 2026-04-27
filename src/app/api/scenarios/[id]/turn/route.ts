@@ -248,6 +248,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   speakerId: speaker.characterId,
                   speakerName: speaker.name,
                   content: `Request: ${proposal.intent.trim()}`,
+                  kind: "request",
                 })
                 touchScenario(scenario.id)
                 messages.push(intentMessage)
@@ -310,6 +311,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     speakerId: target.id,
                     speakerName: target.name,
                     content: `${verb}: ${decision.feedback.trim()}`,
+                    kind: "consent",
                   })
                   touchScenario(scenario.id)
                   messages.push(consentMessage)
@@ -371,6 +373,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                       speakerId: fulfiller.id,
                       speakerName: fulfiller.name,
                       content: text,
+                      kind: "fulfillment",
                     })
                     touchScenario(scenario.id)
                     messages.push(fulfillmentMessage)

@@ -221,7 +221,9 @@ export async function pickNextSpeaker(args: {
     return { kind: "character", characterId: only.id, name: only.name }
   }
 
-  const lastCharacterMessage = [...messages].reverse().find((m) => m.speakerKind === "character")
+  const lastCharacterMessage = [...messages]
+    .reverse()
+    .find((m) => m.speakerKind === "character" && m.kind !== "fulfillment")
   const eligible = lastCharacterMessage
     ? context.characters.filter((c) => c.id !== lastCharacterMessage.speakerId)
     : context.characters
@@ -361,7 +363,7 @@ export async function proposeIntent(args: {
   const { backend, context, messages, speaker, previousAttempts } = args
   const others = context.characters.filter((c) => c.id !== speaker.id)
   if (others.length === 0) {
-    return { intent: "", targetIds: [] }
+    return { type: "ACT", intent: "", targetIds: [] }
   }
 
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()

@@ -73,6 +73,7 @@ function applySchema(db: Database.Database): void {
       speaker_id TEXT,
       speaker_name TEXT NOT NULL,
       content TEXT NOT NULL,
+      kind TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
     );
@@ -139,6 +140,14 @@ function applySchema(db: Database.Database): void {
   }
   if (!columnNames.has("stranger_name")) {
     db.exec("ALTER TABLE characters ADD COLUMN stranger_name TEXT NOT NULL DEFAULT ''")
+  }
+
+  const messageColumns = db
+    .prepare("SELECT name FROM pragma_table_info('messages')")
+    .all() as { name: string }[]
+  const messageColumnNames = new Set(messageColumns.map((c) => c.name))
+  if (!messageColumnNames.has("kind")) {
+    db.exec("ALTER TABLE messages ADD COLUMN kind TEXT")
   }
 
   const scenarioCharColumns = db

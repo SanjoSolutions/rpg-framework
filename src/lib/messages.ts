@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { getDb } from "./db"
 
 export type SpeakerKind = "user" | "character" | "narrator"
+export type MessageKind = "request" | "consent" | "fulfillment"
 
 export interface Message {
   id: string
@@ -10,6 +11,7 @@ export interface Message {
   speakerId: string | null
   speakerName: string
   content: string
+  kind: MessageKind | null
   createdAt: number
 }
 
@@ -20,6 +22,7 @@ interface Row {
   speaker_id: string | null
   speaker_name: string
   content: string
+  kind: MessageKind | null
   created_at: number
 }
 
@@ -31,6 +34,7 @@ function rowToMessage(row: Row): Message {
     speakerId: row.speaker_id,
     speakerName: row.speaker_name,
     content: row.content,
+    kind: row.kind ?? null,
     createdAt: row.created_at,
   }
 }
@@ -48,6 +52,7 @@ export interface MessageInput {
   speakerId?: string | null
   speakerName: string
   content: string
+  kind?: MessageKind | null
 }
 
 export function appendMessage(input: MessageInput): Message {
@@ -58,11 +63,12 @@ export function appendMessage(input: MessageInput): Message {
     speakerId: input.speakerId ?? null,
     speakerName: input.speakerName,
     content: input.content,
+    kind: input.kind ?? null,
     createdAt: Date.now(),
   }
   getDb()
     .prepare(
-      "INSERT INTO messages (id, scenario_id, speaker_kind, speaker_id, speaker_name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO messages (id, scenario_id, speaker_kind, speaker_id, speaker_name, content, kind, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       message.id,
@@ -71,6 +77,7 @@ export function appendMessage(input: MessageInput): Message {
       message.speakerId,
       message.speakerName,
       message.content,
+      message.kind,
       message.createdAt,
     )
   return message
