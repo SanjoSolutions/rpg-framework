@@ -82,6 +82,7 @@ export function ScenarioPlay({
   const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
   const [placement, setPlacement] = useState<Record<string, string | null>>(initialCharacterLocations)
   const [input, setInput] = useState("")
+  const [messageRole, setMessageRole] = useState<"director" | "participant">("director")
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
   const [pendingAttempts, setPendingAttempts] = useState<AttemptUI[]>([])
   const [messageConsents, setMessageConsents] = useState<Record<string, AttemptUI[]>>(() =>
@@ -459,7 +460,7 @@ export function ScenarioPlay({
       const res = await fetch(`/api/scenarios/${scenarioId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, role: messageRole }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -558,19 +559,36 @@ export function ScenarioPlay({
       </div>
       {error && <div className="px-6 pb-2 text-sm text-destructive">{error}</div>}
       <form onSubmit={sendUserMessage} className="border-t border-border px-6 py-3 space-y-2">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          rows={2}
-          placeholder="Speak, narrate, or describe what you do…"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              sendUserMessage(e as unknown as React.FormEvent)
+        <div className="flex items-stretch gap-2">
+          <select
+            value={messageRole}
+            onChange={(e) => setMessageRole(e.target.value as "director" | "participant")}
+            disabled={busy}
+            className="rounded-md border border-input bg-background px-2 text-sm shrink-0"
+            aria-label="Message role"
+          >
+            <option value="director">Director</option>
+            <option value="participant">Participant</option>
+          </select>
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            rows={2}
+            placeholder={
+              messageRole === "director"
+                ? "Direct the scene — set context, push events, address characters out of frame…"
+                : "Speak or act as a participant in the scene…"
             }
-          }}
-          disabled={busy}
-        />
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                sendUserMessage(e as unknown as React.FormEvent)
+              }
+            }}
+            disabled={busy}
+            className="flex-1"
+          />
+        </div>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -785,7 +803,9 @@ function MessageBubble({ message, showRaw }: { message: Message; showRaw: boolea
   if (message.speakerKind === "narrator") {
     return (
       <div className="rounded-lg bg-muted/40 p-3 italic">
-        <div className="text-xs font-medium text-muted-foreground mb-1 not-italic">Narrator</div>
+        <div className="text-xs font-medium text-muted-foreground mb-1 not-italic">
+          {message.speakerName || "Narrator"}
+        </div>
         <div className="whitespace-pre-wrap text-sm">{text}</div>
       </div>
     )

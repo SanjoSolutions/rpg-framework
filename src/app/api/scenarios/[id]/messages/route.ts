@@ -8,6 +8,7 @@ export const runtime = "nodejs"
 const userMessageSchema = z.object({
   content: z.string().trim().min(1).max(8000),
   speakerName: z.string().trim().min(1).max(120).optional(),
+  role: z.enum(["director", "participant"]).optional(),
 })
 
 export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -24,10 +25,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
+  const role = parsed.data.role ?? "director"
   const message = appendMessage({
     scenarioId: id,
-    speakerKind: "user",
-    speakerName: parsed.data.speakerName?.trim() || "You",
+    speakerKind: role === "director" ? "narrator" : "user",
+    speakerName:
+      role === "director" ? "Director" : parsed.data.speakerName?.trim() || "You",
     content: parsed.data.content,
   })
   touchScenario(id)

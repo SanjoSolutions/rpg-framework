@@ -158,6 +158,7 @@ describe("parseIntentProposal", () => {
       type: "REQUEST_CONSENT",
       intent: "I take Jenny's hand and pull her aside.",
       targetIds: ["c2"],
+      destinationLocationId: null,
     })
   })
 
@@ -167,6 +168,7 @@ describe("parseIntentProposal", () => {
       type: "ACT",
       intent: "I pace the room, thinking.",
       targetIds: [],
+      destinationLocationId: null,
     })
   })
 
@@ -176,6 +178,7 @@ describe("parseIntentProposal", () => {
       type: "SPEAK",
       intent: '"Where are we going?"',
       targetIds: [],
+      destinationLocationId: null,
     })
   })
 
@@ -189,6 +192,31 @@ describe("parseIntentProposal", () => {
     const out = parseIntentProposal(raw, candidates)
     expect(out.type).toBe("REQUEST_CONSENT")
     expect(out.targetIds).toEqual(["c2"])
+  })
+
+  it("parses MOVE with a valid destination and companion ids", () => {
+    const destinations = [makeLocation("loc1", "Kitchen")]
+    const raw = "TYPE: MOVE\nINTENT: I head to the kitchen, beckoning Jenny.\nINVOLVES: c2\nDESTINATION: loc1"
+    expect(parseIntentProposal(raw, candidates, undefined, destinations)).toEqual({
+      type: "MOVE",
+      intent: "I head to the kitchen, beckoning Jenny.",
+      targetIds: ["c2"],
+      destinationLocationId: "loc1",
+    })
+  })
+
+  it("matches MOVE destination by name when the LLM gives the wrong id", () => {
+    const destinations = [makeLocation("loc1", "Kitchen")]
+    const raw = "TYPE: MOVE\nINTENT: I head to the kitchen.\nINVOLVES: NONE\nDESTINATION: Kitchen"
+    const out = parseIntentProposal(raw, candidates, undefined, destinations)
+    expect(out.destinationLocationId).toBe("loc1")
+  })
+
+  it("nulls destination for non-MOVE types", () => {
+    const destinations = [makeLocation("loc1", "Kitchen")]
+    const raw = "TYPE: ACT\nINTENT: I pace the room.\nINVOLVES: NONE\nDESTINATION: loc1"
+    const out = parseIntentProposal(raw, candidates, undefined, destinations)
+    expect(out.destinationLocationId).toBeNull()
   })
 
   it("dedupes target ids", () => {

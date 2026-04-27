@@ -30,6 +30,7 @@ import {
   pickNextSpeaker,
   proposeIntent,
   requestConsent,
+  requestMoveConsent,
   streamCharacterTurn,
   type ConsentRefusal,
   type POVKnowledge,
@@ -224,6 +225,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 context,
                 messages,
                 speaker: speakerCharacter,
+                destinations: otherLocations,
                 knowledge: knowledgeFor(speakerCharacter.id),
                 previousAttempts,
                 signal: request.signal,
@@ -234,6 +236,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 intent: proposal.intent,
                 targetIds: proposal.targetIds,
                 type: proposal.type,
+                destinationLocationId: proposal.destinationLocationId,
                 attempt,
               })
 
@@ -253,6 +256,99 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 touchScenario(scenario.id)
                 messages.push(intentMessage)
                 send("message", intentMessage)
+              }
+
+              if (
+                EXPERIMENTAL_SKIP_LONG_GENERATION &&
+                proposal.type === "MOVE" &&
+                proposal.intent.trim() &&
+                proposal.destinationLocationId
+              ) {
+                const destination = otherLocations.find(
+                  (l) => l.id === proposal.destinationLocationId,
+                )
+                if (destination) {
+                  const moveMessage = appendMessage({
+                    scenarioId: scenario.id,
+                    speakerKind: "character",
+                    speakerId: speaker.characterId,
+                    speakerName: speaker.name,
+                    content: `Move to ${destination.name}: ${proposal.intent.trim()}`,
+                    kind: "move",
+                  })
+                  touchScenario(scenario.id)
+                  messages.push(moveMessage)
+                  send("message", moveMessage)
+
+                  const companions = proposal.targetIds
+                    .map((id) => characters.find((c) => c.id === id))
+                    .filter((c): c is NonNullable<typeof c> => c != null)
+
+                  const consentingCompanionIds: string[] = []
+                  for (const companion of companions) {
+                    send("consent_request", {
+                      targetId: companion.id,
+                      targetName: companion.name,
+                      speakerName: speaker.name,
+                      intent: proposal.intent,
+                      attempt,
+                    })
+                    const decision = await requestMoveConsent({
+                      backend,
+                      context,
+                      messages,
+                      target: companion,
+                      speakerName: speaker.name,
+                      destinationName: destination.name,
+                      knowledge: knowledgeFor(companion.id),
+                      signal: request.signal,
+                    })
+                    send("consent_response", { ...decision, attempt })
+
+                    if (decision.feedback.trim()) {
+                      const verb = decision.decision === "yes" ? "Consented" : "Refused"
+                      const consentMessage = appendMessage({
+                        scenarioId: scenario.id,
+                        speakerKind: "character",
+                        speakerId: companion.id,
+                        speakerName: companion.name,
+                        content: `${verb}: ${decision.feedback.trim()}`,
+                        kind: "consent",
+                      })
+                      touchScenario(scenario.id)
+                      messages.push(consentMessage)
+                      send("message", consentMessage)
+                    }
+
+                    if (decision.decision === "yes") consentingCompanionIds.push(companion.id)
+                  }
+
+                  const speakerId = speaker.characterId
+                  if (speakerId) {
+                    setCharacterLocation(scenario.id, speakerId, destination.id)
+                    send("character_moved", {
+                      characterId: speakerId,
+                      characterName: speaker.name,
+                      fromLocationId: scenario.locationId,
+                      toLocationId: destination.id,
+                      toLocationName: destination.name,
+                    })
+                  }
+                  for (const companionId of consentingCompanionIds) {
+                    const companion = characters.find((c) => c.id === companionId)
+                    setCharacterLocation(scenario.id, companionId, destination.id)
+                    send("character_moved", {
+                      characterId: companionId,
+                      characterName: companion?.name ?? null,
+                      fromLocationId: scenario.locationId,
+                      toLocationId: destination.id,
+                      toLocationName: destination.name,
+                    })
+                  }
+
+                  refusals = undefined
+                  break
+                }
               }
 
               if (proposal.type !== "REQUEST_CONSENT" || proposal.targetIds.length === 0) {

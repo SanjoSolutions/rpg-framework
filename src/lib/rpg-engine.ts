@@ -117,7 +117,7 @@ function buildHistory(messages: Message[], aliases: Map<string, string> | null):
   if (messages.length === 0) return "(no prior turns yet)"
   return messages
     .map((m) => {
-      if (m.speakerKind === "narrator") return `[Narrator]: ${m.content}`
+      if (m.speakerKind === "narrator") return `[${m.speakerName || "Narrator"}]: ${m.content}`
       if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
       const label =
         aliases && m.speakerId && aliases.has(m.speakerId)
@@ -223,7 +223,12 @@ export async function pickNextSpeaker(args: {
 
   const lastCharacterMessage = [...messages]
     .reverse()
-    .find((m) => m.speakerKind === "character" && m.kind !== "fulfillment")
+    .find(
+      (m) =>
+        m.speakerKind === "character" &&
+        m.kind !== "fulfillment" &&
+        m.kind !== "consent",
+    )
   const eligible = lastCharacterMessage
     ? context.characters.filter((c) => c.id !== lastCharacterMessage.speakerId)
     : context.characters
@@ -269,23 +274,26 @@ export function selectRandom<T>(items: readonly T[], rng: () => number = Math.ra
   return items[index]
 }
 
-export type IntentType = "REQUEST_CONSENT" | "SPEAK" | "ACT"
+export type IntentType = "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
 
 export interface IntentProposal {
   type: IntentType
   intent: string
   targetIds: string[]
+  destinationLocationId: string | null
 }
 
 export function parseIntentProposal(
   raw: string,
   candidates: Character[],
   aliases?: Map<string, string>,
+  destinations: Location[] = [],
 ): IntentProposal {
   const lines = raw.split(/\r?\n/)
   let typeRaw = ""
   let intent = ""
   let involves = ""
+  let destinationRaw = ""
   for (const line of lines) {
     const typeMatch = /^\s*TYPE\s*:\s*(.+?)\s*$/i.exec(line)
     if (typeMatch && !typeRaw) {
@@ -300,6 +308,11 @@ export function parseIntentProposal(
     const involvesMatch = /^\s*INVOLVES\s*:\s*(.+?)\s*$/i.exec(line)
     if (involvesMatch && !involves) {
       involves = involvesMatch[1].trim()
+      continue
+    }
+    const destMatch = /^\s*DESTINATION\s*:\s*(.+?)\s*$/i.exec(line)
+    if (destMatch && !destinationRaw) {
+      destinationRaw = destMatch[1].trim()
     }
   }
   if (!intent) intent = raw.trim().split(/\r?\n/)[0]?.trim() ?? ""
@@ -320,16 +333,31 @@ export function parseIntentProposal(
     }
   }
 
+  let destinationLocationId: string | null = null
+  if (destinationRaw && !/^none$/i.test(destinationRaw)) {
+    const exact = destinations.find((l) => l.id === destinationRaw)
+    if (exact) {
+      destinationLocationId = exact.id
+    } else {
+      const lower = destinationRaw.toLowerCase()
+      const byName = destinations.find((l) => lower.includes(l.name.toLowerCase()))
+      if (byName) destinationLocationId = byName.id
+    }
+  }
+
   const upper = typeRaw.toUpperCase()
   let type: IntentType
   if (/REQUEST/.test(upper)) type = "REQUEST_CONSENT"
   else if (/SPEAK/.test(upper)) type = "SPEAK"
+  else if (/MOVE/.test(upper)) type = "MOVE"
   else if (/\bACT\b/.test(upper)) type = "ACT"
+  else if (destinationLocationId) type = "MOVE"
   else type = targetIds.length > 0 ? "REQUEST_CONSENT" : "ACT"
 
-  if (type !== "REQUEST_CONSENT") targetIds.length = 0
+  if (type !== "REQUEST_CONSENT" && type !== "MOVE") targetIds.length = 0
+  if (type !== "MOVE") destinationLocationId = null
 
-  return { type, intent, targetIds }
+  return { type, intent, targetIds, destinationLocationId }
 }
 
 export interface PreviousAttempt {
@@ -356,14 +384,16 @@ export async function proposeIntent(args: {
   context: SceneContext
   messages: Message[]
   speaker: Character
+  destinations?: Location[]
   knowledge?: POVKnowledge
   previousAttempts?: PreviousAttempt[]
   signal?: AbortSignal
 }): Promise<IntentProposal> {
   const { backend, context, messages, speaker, previousAttempts } = args
+  const destinations = args.destinations ?? []
   const others = context.characters.filter((c) => c.id !== speaker.id)
-  if (others.length === 0) {
-    return { type: "ACT", intent: "", targetIds: [] }
+  if (others.length === 0 && destinations.length === 0) {
+    return { type: "ACT", intent: "", targetIds: [], destinationLocationId: null }
   }
 
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
@@ -400,17 +430,27 @@ export async function proposeIntent(args: {
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
     `Use "my"/"me"/"myself" for yourself; never write your own name ("${speaker.name}"). Only other characters get named.`,
     "The action is yours alone — don't describe what anyone else does.",
-    "Pick exactly one of three turn TYPES:",
+    "Pick exactly one of four turn TYPES:",
     "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
     "  • SPEAK — you say something out loud. Write INTENT as the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
     "  • ACT — solo non-contact action: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon (without striking). Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
+    "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); INVOLVES: NONE if you're going alone.",
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
-    "INVOLVES is only meaningful for REQUEST_CONSENT. It lists characters whose BODY your action physically contacts. Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them. Only physical contact involves them.",
+    "INVOLVES means: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent). Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them.",
     "Output strictly in this format and nothing else:",
-    "TYPE: <REQUEST_CONSENT or SPEAK or ACT>",
+    "TYPE: <REQUEST_CONSENT or SPEAK or ACT or MOVE>",
     "INTENT: <one sentence>",
-    "INVOLVES: <comma-separated character ids for REQUEST_CONSENT, or NONE>",
+    "INVOLVES: <comma-separated character ids, or NONE>",
+    "DESTINATION: <location id from the list, only when TYPE is MOVE; otherwise NONE>",
   ].join("\n")
+
+  const destinationsBlock =
+    destinations.length > 0
+      ? [
+          "## Other known locations (eligible MOVE destinations)",
+          destinations.map((l) => `- ${l.name} (id: ${l.id})`).join("\n"),
+        ].join("\n")
+      : "## Other known locations\n(none — MOVE is not available)"
 
   const prompt = [
     baseSceneBlock(context, messages, {
@@ -420,14 +460,15 @@ export async function proposeIntent(args: {
     }),
     "## Roster (other characters present)",
     roster,
+    destinationsBlock,
     previousBlock,
-    "Now state your INTENT and INVOLVES.",
+    "Now state your TYPE, INTENT, INVOLVES, and DESTINATION.",
   ]
     .filter((s) => s.length > 0)
     .join("\n\n")
 
   const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return parseIntentProposal(raw, others, aliases)
+  return parseIntentProposal(raw, others, aliases, destinations)
 }
 
 export interface ConsentDecision {
@@ -811,6 +852,57 @@ export interface ConsentRefusal {
   characterId: string
   characterName: string
   feedback: string
+}
+
+export async function requestMoveConsent(args: {
+  backend: LLMBackend
+  context: SceneContext
+  messages: Message[]
+  target: Character
+  speakerName: string
+  destinationName: string
+  knowledge?: POVKnowledge
+  signal?: AbortSignal
+}): Promise<ConsentDecision> {
+  const { backend, context, messages, target, speakerName, destinationName } = args
+  const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
+  const metIds = args.knowledge?.metIds ?? new Set<string>()
+  const speakerCharacter = context.characters.find((c) => c.name === speakerName)
+  const targetAliases = buildAliasMap(context.characters, target.id, knownNameIds)
+  const speakerLabel = speakerCharacter
+    ? labelFor(speakerCharacter.id, speakerCharacter.name, targetAliases)
+    : speakerName
+
+  const system = [
+    `You are ${target.name}.`,
+    target.appearance.trim()
+      ? `Appearance: ${shiftMarkdownHeadings(target.appearance, 2)}`
+      : "",
+    target.description.trim()
+      ? `Description: ${shiftMarkdownHeadings(target.description, 2)}`
+      : "",
+    `${speakerLabel} is leaving the current scene for ${destinationName} and has asked you to come along.`,
+    "Decide whether your character would actually go with them, given who you are, your current goals, and what just happened.",
+    "Output strictly in this format and nothing else:",
+    "DECISION: YES or NO",
+    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character reply to the invitation. Treat it as out-of-character signaling between characters.>`,
+  ]
+    .filter(Boolean)
+    .join("\n")
+
+  const prompt = [
+    baseSceneBlock(context, messages, {
+      povCharacterId: target.id,
+      povKnownNameIds: knownNameIds,
+      povMetIds: metIds,
+    }),
+    `## Invitation — by ${speakerLabel}, to you`,
+    `${speakerLabel} is heading to ${destinationName} and is asking you to come too.`,
+    `Decide whether you, ${target.name}, go with them. Now give your DECISION and FEEDBACK.`,
+  ].join("\n\n")
+
+  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  return parseConsentResponse(raw, target)
 }
 
 export function parseCharacterIdList(raw: string, candidates: Character[]): string[] {

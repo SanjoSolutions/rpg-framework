@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { getDb } from "./db"
 
 export type SpeakerKind = "user" | "character" | "narrator"
-export type MessageKind = "request" | "consent" | "fulfillment"
+export type MessageKind = "request" | "consent" | "fulfillment" | "move"
 
 export interface Message {
   id: string
