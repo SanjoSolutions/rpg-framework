@@ -233,13 +233,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 speakerId: speaker.characterId,
                 intent: proposal.intent,
                 targetIds: proposal.targetIds,
+                type: proposal.type,
                 attempt,
               })
 
               if (
                 EXPERIMENTAL_SKIP_LONG_GENERATION &&
                 proposal.intent.trim() &&
-                proposal.targetIds.length > 0
+                proposal.type === "REQUEST_CONSENT"
               ) {
                 const intentMessage = appendMessage({
                   scenarioId: scenario.id,
@@ -253,7 +254,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 send("message", intentMessage)
               }
 
-              if (proposal.targetIds.length === 0) {
+              if (proposal.type !== "REQUEST_CONSENT" || proposal.targetIds.length === 0) {
                 if (EXPERIMENTAL_SKIP_LONG_GENERATION && proposal.intent.trim()) {
                   const soloMessage = appendMessage({
                     scenarioId: scenario.id,

@@ -286,6 +286,7 @@ export function ScenarioPlay({
               intent: string
               speakerId: string | null
               targetIds?: string[]
+              type?: "REQUEST_CONSENT" | "SPEAK" | "ACT"
             }
             const speakerName =
               characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
@@ -297,7 +298,7 @@ export function ScenarioPlay({
               pendingAttemptsRef.current = [...pendingAttemptsRef.current, newAttempt]
               setPendingAttempts(pendingAttemptsRef.current)
             }
-            const isRequest = (p.targetIds?.length ?? 0) > 0
+            const isRequest = p.type === "REQUEST_CONSENT"
             if (isRequest && showRequestInternals) {
               enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
             }

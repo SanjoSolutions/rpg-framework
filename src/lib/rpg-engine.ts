@@ -267,7 +267,10 @@ export function selectRandom<T>(items: readonly T[], rng: () => number = Math.ra
   return items[index]
 }
 
+export type IntentType = "REQUEST_CONSENT" | "SPEAK" | "ACT"
+
 export interface IntentProposal {
+  type: IntentType
   intent: string
   targetIds: string[]
 }
@@ -278,9 +281,15 @@ export function parseIntentProposal(
   aliases?: Map<string, string>,
 ): IntentProposal {
   const lines = raw.split(/\r?\n/)
+  let typeRaw = ""
   let intent = ""
   let involves = ""
   for (const line of lines) {
+    const typeMatch = /^\s*TYPE\s*:\s*(.+?)\s*$/i.exec(line)
+    if (typeMatch && !typeRaw) {
+      typeRaw = typeMatch[1].trim()
+      continue
+    }
     const intentMatch = /^\s*INTENT\s*:\s*(.+?)\s*$/i.exec(line)
     if (intentMatch && !intent) {
       intent = intentMatch[1].trim()
@@ -292,6 +301,7 @@ export function parseIntentProposal(
     }
   }
   if (!intent) intent = raw.trim().split(/\r?\n/)[0]?.trim() ?? ""
+
   const targetIds: string[] = []
   if (involves && !/^none$/i.test(involves)) {
     const matched = parseSpeakerCandidates(involves, candidates)
@@ -307,7 +317,17 @@ export function parseIntentProposal(
       }
     }
   }
-  return { intent, targetIds }
+
+  const upper = typeRaw.toUpperCase()
+  let type: IntentType
+  if (/REQUEST/.test(upper)) type = "REQUEST_CONSENT"
+  else if (/SPEAK/.test(upper)) type = "SPEAK"
+  else if (/\bACT\b/.test(upper)) type = "ACT"
+  else type = targetIds.length > 0 ? "REQUEST_CONSENT" : "ACT"
+
+  if (type !== "REQUEST_CONSENT") targetIds.length = 0
+
+  return { type, intent, targetIds }
 }
 
 export interface PreviousAttempt {
@@ -378,15 +398,16 @@ export async function proposeIntent(args: {
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
     `Use "my"/"me"/"myself" for yourself; never write your own name ("${speaker.name}"). Only other characters get named.`,
     "The action is yours alone — don't describe what anyone else does.",
-    "Three possible turn shapes — pick whichever fits naturally:",
-    "  • REQUEST — your own body makes direct physical contact with another character's body. Write \"I <verb> ...\". List affected characters in INVOLVES.",
-    "  • SPEAK — you say something out loud. Write the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
-    "  • ACT — solo non-contact action: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon (without striking). Write \"I <verb> ...\". INVOLVES: NONE.",
+    "Pick exactly one of three turn TYPES:",
+    "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
+    "  • SPEAK — you say something out loud. Write INTENT as the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
+    "  • ACT — solo non-contact action: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon (without striking). Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
-    "INVOLVES lists characters whose BODY your action physically contacts. Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them. Only physical contact involves them.",
+    "INVOLVES is only meaningful for REQUEST_CONSENT. It lists characters whose BODY your action physically contacts. Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them. Only physical contact involves them.",
     "Output strictly in this format and nothing else:",
-    "INTENT: <one sentence — infinitive for a request, first person for a message>",
-    "INVOLVES: <comma-separated character ids whose BODY you would physically act on, or NONE>",
+    "TYPE: <REQUEST_CONSENT or SPEAK or ACT>",
+    "INTENT: <one sentence>",
+    "INVOLVES: <comma-separated character ids for REQUEST_CONSENT, or NONE>",
   ].join("\n")
 
   const prompt = [

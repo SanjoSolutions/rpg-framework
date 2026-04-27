@@ -153,23 +153,46 @@ describe("parseIntentProposal", () => {
   const candidates = [aria, jenny]
 
   it("extracts intent and target ids from labeled output", () => {
-    const raw = "INTENT: I take Jenny's hand and pull her aside.\nINVOLVES: c2"
+    const raw = "TYPE: REQUEST_CONSENT\nINTENT: I take Jenny's hand and pull her aside.\nINVOLVES: c2"
     expect(parseIntentProposal(raw, candidates)).toEqual({
+      type: "REQUEST_CONSENT",
       intent: "I take Jenny's hand and pull her aside.",
       targetIds: ["c2"],
     })
   })
 
   it("returns no targets when INVOLVES is NONE", () => {
-    const raw = "INTENT: I pace the room, thinking.\nINVOLVES: NONE"
+    const raw = "TYPE: ACT\nINTENT: I pace the room, thinking.\nINVOLVES: NONE"
     expect(parseIntentProposal(raw, candidates)).toEqual({
+      type: "ACT",
       intent: "I pace the room, thinking.",
       targetIds: [],
     })
   })
 
+  it("parses SPEAK type with quoted dialogue", () => {
+    const raw = 'TYPE: SPEAK\nINTENT: "Where are we going?"\nINVOLVES: NONE'
+    expect(parseIntentProposal(raw, candidates)).toEqual({
+      type: "SPEAK",
+      intent: '"Where are we going?"',
+      targetIds: [],
+    })
+  })
+
+  it("ignores INVOLVES targets when TYPE is not REQUEST_CONSENT", () => {
+    const raw = "TYPE: SPEAK\nINTENT: \"Get out, Jenny.\"\nINVOLVES: c2"
+    expect(parseIntentProposal(raw, candidates).targetIds).toEqual([])
+  })
+
+  it("infers REQUEST_CONSENT when TYPE is missing but INVOLVES has ids", () => {
+    const raw = "INTENT: I grab her wrist.\nINVOLVES: c2"
+    const out = parseIntentProposal(raw, candidates)
+    expect(out.type).toBe("REQUEST_CONSENT")
+    expect(out.targetIds).toEqual(["c2"])
+  })
+
   it("dedupes target ids", () => {
-    const raw = "INTENT: I challenge them both.\nINVOLVES: c1, c2, c1"
+    const raw = "TYPE: REQUEST_CONSENT\nINTENT: I grab them both.\nINVOLVES: c1, c2, c1"
     expect(parseIntentProposal(raw, candidates).targetIds).toEqual(["c1", "c2"])
   })
 
@@ -179,7 +202,7 @@ describe("parseIntentProposal", () => {
   })
 
   it("matches POV aliases when LLM outputs Stranger labels instead of ids", () => {
-    const raw = "INTENT: I grab her hand.\nINVOLVES: Stranger 1"
+    const raw = "TYPE: REQUEST_CONSENT\nINTENT: I grab her hand.\nINVOLVES: Stranger 1"
     const aliases = new Map([["c2", "Stranger 1"]])
     const out = parseIntentProposal(raw, candidates, aliases)
     expect(out.targetIds).toEqual(["c2"])
