@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,6 +27,16 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
   const [characterIds, setCharacterIds] = useState<string[]>(scenario?.characterIds ?? [])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const nameRef = useRef<HTMLInputElement>(null)
+  const summaryRef = useRef<HTMLTextAreaElement>(null)
+
+  const getEntity = () => ({
+    name,
+    summary,
+    locationId,
+    characterIds,
+  })
 
   function toggleCharacter(id: string) {
     setCharacterIds((current) =>
@@ -83,13 +94,39 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
+        <div className="flex items-center justify-between">
+          <Label htmlFor="name">Name</Label>
+          <AssistButton
+            entityType="scenario"
+            field="name"
+            fieldLabel="Name"
+            getEntity={getEntity}
+            targetRef={nameRef}
+          />
+        </div>
+        <Input
+          id="name"
+          ref={nameRef}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          maxLength={120}
+        />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="summary">Summary</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="summary">Summary</Label>
+          <AssistButton
+            entityType="scenario"
+            field="summary"
+            fieldLabel="Summary"
+            getEntity={getEntity}
+            targetRef={summaryRef}
+          />
+        </div>
         <Textarea
           id="summary"
+          ref={summaryRef}
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           rows={5}

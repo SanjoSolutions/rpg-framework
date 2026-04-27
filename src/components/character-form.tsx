@@ -1,7 +1,8 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,6 +22,13 @@ export function CharacterForm({ mode, character }: Props) {
   const [voice, setVoice] = useState(character?.voice ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const nameRef = useRef<HTMLInputElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const personalityRef = useRef<HTMLTextAreaElement>(null)
+  const voiceRef = useRef<HTMLInputElement>(null)
+
+  const getEntity = () => ({ name, description, personality, voice })
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -71,13 +79,39 @@ export function CharacterForm({ mode, character }: Props) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
+        <div className="flex items-center justify-between">
+          <Label htmlFor="name">Name</Label>
+          <AssistButton
+            entityType="character"
+            field="name"
+            fieldLabel="Name"
+            getEntity={getEntity}
+            targetRef={nameRef}
+          />
+        </div>
+        <Input
+          id="name"
+          ref={nameRef}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          maxLength={120}
+        />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="description">Description</Label>
+          <AssistButton
+            entityType="character"
+            field="description"
+            fieldLabel="Description"
+            getEntity={getEntity}
+            targetRef={descriptionRef}
+          />
+        </div>
         <Textarea
           id="description"
+          ref={descriptionRef}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
@@ -85,9 +119,19 @@ export function CharacterForm({ mode, character }: Props) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="personality">Personality</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="personality">Personality</Label>
+          <AssistButton
+            entityType="character"
+            field="personality"
+            fieldLabel="Personality"
+            getEntity={getEntity}
+            targetRef={personalityRef}
+          />
+        </div>
         <Textarea
           id="personality"
+          ref={personalityRef}
           value={personality}
           onChange={(e) => setPersonality(e.target.value)}
           rows={6}
@@ -95,9 +139,19 @@ export function CharacterForm({ mode, character }: Props) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="voice">TTS voice (optional)</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="voice">TTS voice (optional)</Label>
+          <AssistButton
+            entityType="character"
+            field="voice"
+            fieldLabel="TTS voice"
+            getEntity={getEntity}
+            targetRef={voiceRef}
+          />
+        </div>
         <Input
           id="voice"
+          ref={voiceRef}
           value={voice}
           onChange={(e) => setVoice(e.target.value)}
           placeholder="e.g. Eve, Rex"
