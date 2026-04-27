@@ -747,8 +747,9 @@ export async function requestConsent(args: {
     target.personality.trim()
       ? `Personality: ${shiftMarkdownHeadings(target.personality, 2)}`
       : "",
-    `${speakerLabel} is about to act on you in the scene. You decide — in character — whether to allow it.`,
-    "Refuse if your character would not want this, given their personality, the situation, and what just happened.",
+    `${speakerLabel} is about to act on you in the scene. You are the RECIPIENT, not the actor — ${speakerLabel} performs the action; you only decide whether to allow it.`,
+    `The proposed action below is written in ${speakerLabel}'s own first-person voice. Any "I", "me", or "my" in it refers to ${speakerLabel}, NEVER to you. You will not carry out the action — ${speakerLabel} will.`,
+    "Refuse if your character would not want this done to them, given their personality, the situation, and what just happened.",
     "Output strictly in this format and nothing else:",
     "DECISION: YES or NO",
     "REASON: <one short sentence of your private inner reasoning, shown ONLY to the user — not spoken aloud, not shared with the speaker or any other character, not to be revealed in the scene>",
@@ -762,9 +763,10 @@ export async function requestConsent(args: {
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
     }),
-    `## Proposed action by ${speakerLabel}`,
-    intent,
-    "Now give your DECISION and REASON.",
+    `## Proposed action — by ${speakerLabel}, toward you`,
+    `${speakerLabel}'s own words ("I" = ${speakerLabel}, not you):`,
+    `> ${intent}`,
+    `Decide whether you, ${target.name}, allow ${speakerLabel} to do this to you. Now give your DECISION and REASON.`,
   ].join("\n\n")
 
   const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
@@ -819,10 +821,9 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const otherCharactersRules =
     otherAliases.length > 0
       ? [
-          `STRICT: write ONLY for yourself. Stop your turn before any other character reacts.`,
-          `Do NOT write any dialogue, speech, sounds, or noises for ${othersList}. Not a single word.`,
-          `Do NOT describe what ${othersList} do, say, think, feel, want, gasp, smile, blush, nod, look like, react, respond, or anything else. Their reactions are theirs to write, not yours — even reactions to your own action.`,
-          `You may describe your own action toward them (e.g. "I reach for her hand"), but STOP there. Do NOT continue into their response ("...and she lets me", "...her fingers close around mine", "...she pulls away"). End your turn at your own action.`,
+          `STRICT — write ONLY your own dialogue, actions, thoughts, and feelings. Your turn ends the instant your own action ends.`,
+          `${othersList} are NOT yours to write. Not a word of their speech, not a sound, not a thought, not a feeling, not a gesture (no nods, smiles, blushes, gasps, sighs, glances), not a reaction — not even a reaction to what you just did. Their responses belong to THEIR next turn.`,
+          `Concrete contrast — if your action is reaching for her hand:\n  WRONG: "I reach for her hand. She lets me take it, her fingers warm against mine."\n  WRONG: "I reach for her hand and she pulls away with a frown."\n  RIGHT: "I reach for her hand."\nStop where the RIGHT example stops. Every time.`,
         ]
       : []
 
