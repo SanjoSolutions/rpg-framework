@@ -77,7 +77,7 @@ export function ScenarioPlay({
   initialCharacterLocations,
 }: Props) {
   const { voiceEnabled, setVoiceEnabled } = useSettings()
-  const { showRawMessages, showMemories } = useDevSidebar()
+  const { showRawMessages, showMemories, showRequestInternals } = useDevSidebar()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
   const [placement, setPlacement] = useState<Record<string, string | null>>(initialCharacterLocations)
@@ -100,6 +100,9 @@ export function ScenarioPlay({
   const transcriptRef = useRef<HTMLDivElement>(null)
   const pendingAttemptsRef = useRef<AttemptUI[]>([])
   const turnGenRef = useRef(0)
+  const ttsChainRef = useRef<Promise<unknown>>(Promise.resolve())
+  const ttsTokenRef = useRef(0)
+  const experimentalRef = useRef(false)
 
   function locationOf(characterId: string): string | null {
     if (Object.prototype.hasOwnProperty.call(placement, characterId)) {
@@ -155,6 +158,9 @@ export function ScenarioPlay({
       abortRef.current?.abort()
       abortRef.current = null
       sentenceSpeakerRef.current = null
+      // Invalidate any queued voice plays — captured token will mismatch.
+      ttsTokenRef.current = NaN
+      ttsChainRef.current = Promise.resolve()
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current.src = ""
@@ -193,6 +199,32 @@ export function ScenarioPlay({
     return collides ? character.name : ""
   }
 
+  function enqueueVoice(characterId: string | null, text: string, prefix = "") {
+    if (!voiceEnabled) return
+    if (!characterId) return
+    const character = characters.find((c) => c.id === characterId)
+    if (!character?.voice) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const voice = character.voice
+    const myToken = ttsTokenRef.current
+    ttsChainRef.current = ttsChainRef.current.catch(() => {}).then(() => {
+      if (ttsTokenRef.current !== myToken) return
+      return playVoice({
+        voice,
+        text: trimmed,
+        prefix,
+        onServerFailure: () => setServerTtsAvailable(false),
+        audioRef,
+      })
+    })
+  }
+
+  function resetTtsQueue() {
+    ttsTokenRef.current++
+    ttsChainRef.current = Promise.resolve()
+  }
+
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages, pendingTurn])
@@ -207,6 +239,8 @@ export function ScenarioPlay({
     setPendingTurn(null)
     setPendingAttempts([])
     pendingAttemptsRef.current = []
+    resetTtsQueue()
+    experimentalRef.current = false
     const myGen = ++turnGenRef.current
     const controller = new AbortController()
     abortRef.current = controller
@@ -248,36 +282,48 @@ export function ScenarioPlay({
           }
 
           if (event === "intent") {
-            const p = payload as { intent: string; speakerId: string | null }
+            const p = payload as {
+              intent: string
+              speakerId: string | null
+              targetIds?: string[]
+            }
             const speakerName =
               characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
-            const newAttempt: AttemptUI = {
-              intent: { speakerName, intent: p.intent },
-              consents: [],
-            }
-            pendingAttemptsRef.current = [...pendingAttemptsRef.current, newAttempt]
-            setPendingAttempts(pendingAttemptsRef.current)
-          } else if (event === "consent_request") {
-            const p = payload as {
-              targetId: string
-              targetName: string
-              speakerName: string
-              intent: string
-            }
-            const entry: ConsentEvent = {
-              id: p.targetId,
-              targetName: p.targetName,
-              speakerName: p.speakerName,
-              intent: p.intent,
-              decision: null,
-              feedback: null,
-            }
-            const lastIndex = pendingAttemptsRef.current.length - 1
-            if (lastIndex >= 0) {
-              pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
-                i === lastIndex ? { ...a, consents: [...a.consents, entry] } : a,
-              )
+            if (!experimentalRef.current) {
+              const newAttempt: AttemptUI = {
+                intent: { speakerName, intent: p.intent },
+                consents: [],
+              }
+              pendingAttemptsRef.current = [...pendingAttemptsRef.current, newAttempt]
               setPendingAttempts(pendingAttemptsRef.current)
+            }
+            const isRequest = (p.targetIds?.length ?? 0) > 0
+            if (isRequest && showRequestInternals) {
+              enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
+            }
+          } else if (event === "consent_request") {
+            if (!experimentalRef.current) {
+              const p = payload as {
+                targetId: string
+                targetName: string
+                speakerName: string
+                intent: string
+              }
+              const entry: ConsentEvent = {
+                id: p.targetId,
+                targetName: p.targetName,
+                speakerName: p.speakerName,
+                intent: p.intent,
+                decision: null,
+                feedback: null,
+              }
+              const lastIndex = pendingAttemptsRef.current.length - 1
+              if (lastIndex >= 0) {
+                pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
+                  i === lastIndex ? { ...a, consents: [...a.consents, entry] } : a,
+                )
+                setPendingAttempts(pendingAttemptsRef.current)
+              }
             }
           } else if (event === "consent_response") {
             const p = payload as {
@@ -285,32 +331,42 @@ export function ScenarioPlay({
               decision: "yes" | "no"
               feedback: string
             }
-            const lastIndex = pendingAttemptsRef.current.length - 1
-            if (lastIndex >= 0) {
-              pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
-                i === lastIndex
-                  ? {
-                      ...a,
-                      consents: a.consents.map((c) =>
-                        c.id === p.characterId
-                          ? { ...c, decision: p.decision, feedback: p.feedback }
-                          : c,
-                      ),
-                    }
-                  : a,
-              )
-              setPendingAttempts(pendingAttemptsRef.current)
+            if (!experimentalRef.current) {
+              const lastIndex = pendingAttemptsRef.current.length - 1
+              if (lastIndex >= 0) {
+                pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
+                  i === lastIndex
+                    ? {
+                        ...a,
+                        consents: a.consents.map((c) =>
+                          c.id === p.characterId
+                            ? { ...c, decision: p.decision, feedback: p.feedback }
+                            : c,
+                        ),
+                      }
+                    : a,
+                )
+                setPendingAttempts(pendingAttemptsRef.current)
+              }
+            }
+            if (showRequestInternals) {
+              const target = characters.find((c) => c.id === p.characterId)
+              const targetName = target?.name ?? "Speaker"
+              const verb = p.decision === "yes" ? "Consented" : "Refused"
+              enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
             }
           } else if (event === "speaker") {
-            const p = payload as SpeakerInfo
+            const p = payload as SpeakerInfo & { experimental?: boolean }
+            experimentalRef.current = !!p.experimental
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
-            setPendingTurn(speaker)
+            if (!experimentalRef.current) setPendingTurn(speaker)
             sentenceSpeakerRef.current = null
             if (
               voiceEnabled &&
               serverTtsAvailable === false &&
               p.kind === "character" &&
-              p.characterId
+              p.characterId &&
+              !experimentalRef.current
             ) {
               const character = characters.find((c) => c.id === p.characterId)
               if (character?.voice) {
@@ -344,15 +400,22 @@ export function ScenarioPlay({
               sentenceSpeakerRef.current.flush()
               sentenceSpeakerRef.current = null
             } else if (voiceEnabled && message.speakerKind === "character") {
-              const character = characters.find((c) => c.id === message.speakerId)
-              if (character?.voice) {
-                playVoice({
-                  voice: character.voice,
-                  text: message.content,
-                  prefix: speakerPrefix(message.speakerId),
-                  onServerFailure: () => setServerTtsAvailable(false),
-                  audioRef,
-                }).catch(() => {})
+              const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
+              if (experimentalRef.current) {
+                if (!isLabeled) {
+                  enqueueVoice(message.speakerId, message.content, speakerPrefix(message.speakerId))
+                }
+              } else {
+                const character = characters.find((c) => c.id === message.speakerId)
+                if (character?.voice) {
+                  playVoice({
+                    voice: character.voice,
+                    text: message.content,
+                    prefix: speakerPrefix(message.speakerId),
+                    onServerFailure: () => setServerTtsAvailable(false),
+                    audioRef,
+                  }).catch(() => {})
+                }
               }
             }
             // Re-enable inputs as soon as the user-visible turn lands. Memory
@@ -419,6 +482,7 @@ export function ScenarioPlay({
     setBusy(false)
     setPendingTurn(null)
     sentenceSpeakerRef.current = null
+    resetTtsQueue()
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.src = ""
@@ -462,6 +526,8 @@ export function ScenarioPlay({
           )}
           {messages.map((m) => {
             const attached = messageConsents[m.id]
+            const isInternal = /^(Request|Consented|Refused):/i.test(m.content.trim())
+            if (isInternal && !showRequestInternals) return null
             return (
               <div key={m.id} className="space-y-3">
                 {attached?.map((a, idx) => (
@@ -682,7 +748,7 @@ function AttemptBlock({ attempt }: { attempt: AttemptUI }) {
 function IntentNote({ intent }: { intent: { speakerName: string; intent: string } }) {
   return (
     <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-      <span className="font-medium">{intent.speakerName} intends:</span>{" "}
+      <span className="font-medium">{intent.speakerName}. Request:</span>{" "}
       <span className="italic">{intent.intent}</span>
     </div>
   )
@@ -752,16 +818,26 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   const release = () => {
     if (audioRef.current === audio) audioRef.current = null
   }
-  audio.addEventListener("ended", release, { once: true })
+  let resolveEnded: () => void = () => {}
+  const ended = new Promise<void>((resolve) => {
+    resolveEnded = resolve
+  })
+  const handleEnded = () => {
+    release()
+    resolveEnded()
+  }
+  audio.addEventListener("ended", handleEnded, { once: true })
   let fellBack = false
   const fallback = () => {
     if (fellBack) return
     fellBack = true
+    audio.removeEventListener("ended", handleEnded)
     release()
     onServerFailure()
     const speaker = new SentenceSpeaker(prefix, voice)
     speaker.push(text)
     speaker.flush()
+    resolveEnded()
   }
   audio.addEventListener("error", fallback, { once: true })
   try {
@@ -770,6 +846,7 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   } catch {
     fallback()
   }
+  await ended
 }
 
 type Gender = "male" | "female"

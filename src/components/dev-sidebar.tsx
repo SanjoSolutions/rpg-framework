@@ -12,6 +12,8 @@ export function DevSidebar() {
     toggleShowRawMessages,
     showMemories,
     toggleShowMemories,
+    showRequestInternals,
+    toggleShowRequestInternals,
     collapsed,
     toggleCollapsed,
   } = useDevSidebar()
@@ -63,6 +65,16 @@ export function DevSidebar() {
           </p>
         </>
       )}
+      <label className="mt-4 flex items-center justify-between gap-3">
+        <span>Show request/response internals</span>
+        <Switch
+          checked={showRequestInternals}
+          onCheckedChange={toggleShowRequestInternals}
+        />
+      </label>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Show the underlying Request/Consented/Refused messages alongside fulfillment.
+      </p>
     </aside>
   )
 }

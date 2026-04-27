@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useSyncExternalStore, type Reac
 const RAW_KEY = "rpg-show-raw-messages"
 const COLLAPSED_KEY = "rpg-dev-sidebar-collapsed"
 const MEMORIES_KEY = "rpg-show-memories"
+const REQUEST_INTERNALS_KEY = "rpg-show-request-internals"
 
 const listeners = new Set<() => void>()
 function subscribe(listener: () => void) {
@@ -41,11 +42,17 @@ function readMemories() {
   return readBool(MEMORIES_KEY)
 }
 
+function readRequestInternals() {
+  return readBool(REQUEST_INTERNALS_KEY)
+}
+
 interface DevSidebarState {
   showRawMessages: boolean
   toggleShowRawMessages: () => void
   showMemories: boolean
   toggleShowMemories: () => void
+  showRequestInternals: boolean
+  toggleShowRequestInternals: () => void
   collapsed: boolean
   toggleCollapsed: () => void
 }
@@ -65,10 +72,16 @@ function toggle(key: string) {
 export function DevSidebarProvider({ children }: { children: ReactNode }) {
   const showRawMessages = useSyncExternalStore(subscribe, readRaw, readBoolServer)
   const showMemories = useSyncExternalStore(subscribe, readMemories, readBoolServer)
+  const showRequestInternals = useSyncExternalStore(
+    subscribe,
+    readRequestInternals,
+    readBoolServer,
+  )
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, readBoolServer)
 
   const toggleShowRawMessages = useCallback(() => toggle(RAW_KEY), [])
   const toggleShowMemories = useCallback(() => toggle(MEMORIES_KEY), [])
+  const toggleShowRequestInternals = useCallback(() => toggle(REQUEST_INTERNALS_KEY), [])
   const toggleCollapsed = useCallback(() => toggle(COLLAPSED_KEY), [])
 
   return (
@@ -78,6 +91,8 @@ export function DevSidebarProvider({ children }: { children: ReactNode }) {
         toggleShowRawMessages,
         showMemories,
         toggleShowMemories,
+        showRequestInternals,
+        toggleShowRequestInternals,
         collapsed,
         toggleCollapsed,
       }}

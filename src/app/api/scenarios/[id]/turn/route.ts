@@ -25,6 +25,8 @@ import {
   extractMemoriesFromTurn,
   extractMovementsFromTurn,
   extractNameLearningsFromTurn,
+  generateFulfillmentMessage,
+  pickFulfillers,
   pickNextSpeaker,
   proposeIntent,
   requestConsent,
@@ -40,6 +42,10 @@ import { getLogger } from "@/lib/logger"
 import type { LLMBackend } from "@/lib/llm"
 
 const logger = getLogger({ component: "turn" })
+
+// Experimental: skip the long character-reply generation and emit only the
+// intent request + consent response cycle. Flip to false to restore normal turns.
+const EXPERIMENTAL_SKIP_LONG_GENERATION = true
 
 export const runtime = "nodejs"
 
@@ -182,6 +188,15 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         let refusals: ConsentRefusal[] | undefined
         let memories: Memory[] | undefined
 
+        if (EXPERIMENTAL_SKIP_LONG_GENERATION) {
+          send("speaker", {
+            kind: speaker.kind,
+            characterId: speaker.characterId,
+            name: speaker.name,
+            experimental: true,
+          })
+        }
+
         if (memoriesEnabled && speaker.kind === "character" && speaker.characterId) {
           memories = listMemoriesForScene({
             ownerCharacterId: speaker.characterId,
@@ -221,7 +236,36 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 attempt,
               })
 
+              if (
+                EXPERIMENTAL_SKIP_LONG_GENERATION &&
+                proposal.intent.trim() &&
+                proposal.targetIds.length > 0
+              ) {
+                const intentMessage = appendMessage({
+                  scenarioId: scenario.id,
+                  speakerKind: "character",
+                  speakerId: speaker.characterId,
+                  speakerName: speaker.name,
+                  content: `Request: ${proposal.intent.trim()}`,
+                })
+                touchScenario(scenario.id)
+                messages.push(intentMessage)
+                send("message", intentMessage)
+              }
+
               if (proposal.targetIds.length === 0) {
+                if (EXPERIMENTAL_SKIP_LONG_GENERATION && proposal.intent.trim()) {
+                  const soloMessage = appendMessage({
+                    scenarioId: scenario.id,
+                    speakerKind: "character",
+                    speakerId: speaker.characterId,
+                    speakerName: speaker.name,
+                    content: proposal.intent.trim(),
+                  })
+                  touchScenario(scenario.id)
+                  messages.push(soloMessage)
+                  send("message", soloMessage)
+                }
                 attempts.push({
                   intent: { speakerName: speaker.name, intent: proposal.intent },
                   consents: [],
@@ -256,6 +300,21 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   signal: request.signal,
                 })
                 send("consent_response", { ...decision, attempt })
+
+                if (EXPERIMENTAL_SKIP_LONG_GENERATION && decision.feedback.trim()) {
+                  const verb = decision.decision === "yes" ? "Consented" : "Refused"
+                  const consentMessage = appendMessage({
+                    scenarioId: scenario.id,
+                    speakerKind: "character",
+                    speakerId: target.id,
+                    speakerName: target.name,
+                    content: `${verb}: ${decision.feedback.trim()}`,
+                  })
+                  touchScenario(scenario.id)
+                  messages.push(consentMessage)
+                  send("message", consentMessage)
+                }
+
                 consentEvents.push({
                   characterId: decision.characterId,
                   characterName: decision.characterName,
@@ -279,6 +338,44 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
               if (refusedTargetIds.length === 0) {
                 refusals = undefined
+                if (EXPERIMENTAL_SKIP_LONG_GENERATION) {
+                  const consentedTargetIds = proposal.targetIds.filter(
+                    (id) => !refusedTargetIds.includes(id),
+                  )
+                  const order = await pickFulfillers({
+                    backend,
+                    context,
+                    speaker: speakerCharacter,
+                    intent: proposal.intent,
+                    consentedTargetIds,
+                    signal: request.signal,
+                  })
+                  for (const fulfillerId of order) {
+                    const fulfiller = characters.find((c) => c.id === fulfillerId)
+                    if (!fulfiller) continue
+                    const text = await generateFulfillmentMessage({
+                      backend,
+                      context,
+                      messages,
+                      fulfiller,
+                      speakerName: speaker.name,
+                      intent: proposal.intent,
+                      knowledge: knowledgeFor(fulfiller.id),
+                      signal: request.signal,
+                    })
+                    if (!text) continue
+                    const fulfillmentMessage = appendMessage({
+                      scenarioId: scenario.id,
+                      speakerKind: "character",
+                      speakerId: fulfiller.id,
+                      speakerName: fulfiller.name,
+                      content: text,
+                    })
+                    touchScenario(scenario.id)
+                    messages.push(fulfillmentMessage)
+                    send("message", fulfillmentMessage)
+                  }
+                }
                 break
               }
 
@@ -296,6 +393,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               }
             }
           }
+        }
+
+        if (EXPERIMENTAL_SKIP_LONG_GENERATION) {
+          send("done", {})
+          return
         }
 
         await streamOneTurn({

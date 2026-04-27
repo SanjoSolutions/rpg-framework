@@ -376,13 +376,15 @@ export async function proposeIntent(args: {
 
   const system = [
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
-    "State your intent in ONE short sentence (first person), then list which other characters your action would DIRECTLY PHYSICALLY ACT ON.",
-    "A character is 'acted on' ONLY if your action directly affects their physical body — touching, grabbing, holding, hitting, kissing, embracing, restraining, undressing, taking something from their hand, blocking their path, or any physical contact.",
-    "Talking, asking, demanding, requesting, threatening, persuading, flirting verbally, insulting, complimenting, telling them to do something, or any purely verbal/social/emotional interaction does NOT count and does NOT require consent. Same for walking past them, looking at them, or being in the same room.",
-    "If your turn is only words and your own actions in space (not on their body), output INVOLVES: NONE.",
+    `Use "my"/"me"/"myself" for yourself; never write your own name ("${speaker.name}"). Only other characters get named.`,
+    "The action is yours alone — don't describe what anyone else does.",
+    `Write the INTENT as a first-person sentence ("I <verb> ..."). The shape is decided entirely by INVOLVES:`,
+    "  • REQUEST — your own body makes direct physical contact with another character's body. List affected characters in INVOLVES.",
+    "  • MESSAGE — anything else. Verbal actions: say, tell, ask, demand, order, command, whisper, shout, yell, insult, threaten, warn, invite, persuade, beg, address. Other non-contact actions: gesture, look at, walk toward, walk past, point, nod, wink, smile, glare, reach for an object. Even verbal actions that name another character or order them around (\"I demand she leave\", \"I tell him to kneel\") are MESSAGE, not REQUEST — your voice is not your body. INVOLVES: NONE.",
+    "INVOLVES lists characters whose BODY your action physically contacts. Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them. Only physical contact involves them.",
     "Output strictly in this format and nothing else:",
-    "INTENT: <one sentence describing what you want to do>",
-    "INVOLVES: <comma-separated character ids from the roster of characters whose BODY you would physically act on, or NONE>",
+    "INTENT: <one sentence — infinitive for a request, first person for a message>",
+    "INVOLVES: <comma-separated character ids whose BODY you would physically act on, or NONE>",
   ].join("\n")
 
   const prompt = [
@@ -786,6 +788,114 @@ export interface ConsentRefusal {
   feedback: string
 }
 
+export function parseCharacterIdList(raw: string, candidates: Character[]): string[] {
+  const ids = new Set(candidates.map((c) => c.id))
+  const out: string[] = []
+  const seen = new Set<string>()
+  const tokens = raw
+    .replace(/[\r\n]+/g, " ")
+    .split(/[\s,;|/]+/)
+    .map((t) => t.replace(/^[`"'(\[]+|[`"')\].,;:]+$/g, "").trim())
+    .filter(Boolean)
+  for (const token of tokens) {
+    if (ids.has(token) && !seen.has(token)) {
+      seen.add(token)
+      out.push(token)
+    }
+  }
+  if (out.length > 0) return out
+  const lower = raw.toLowerCase()
+  for (const c of candidates) {
+    if (lower.includes(c.name.toLowerCase()) && !seen.has(c.id)) {
+      seen.add(c.id)
+      out.push(c.id)
+    }
+  }
+  return out
+}
+
+/**
+ * After a request has been consented, asks the LLM which characters need to act
+ * to fulfill it, in what order. Returns ordered character ids drawn from the
+ * speaker plus the consenting targets.
+ */
+export async function pickFulfillers(args: {
+  backend: LLMBackend
+  context: SceneContext
+  speaker: Character
+  intent: string
+  consentedTargetIds: string[]
+  signal?: AbortSignal
+}): Promise<string[]> {
+  const { backend, context, speaker, intent, consentedTargetIds } = args
+  const candidates = [speaker, ...context.characters.filter((c) => consentedTargetIds.includes(c.id))]
+  if (candidates.length === 1) return [speaker.id]
+
+  const roster = candidates.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
+
+  const system = [
+    "You direct who acts to fulfill a consented request, and in what order.",
+    "List only the characters who need to physically act for the request to be carried out, in the order they should act. Skip anyone whose role is purely passive.",
+    "Output ordered character ids, one per line, with no prose.",
+  ].join("\n")
+
+  const prompt = [
+    `## Request (by ${speaker.name})`,
+    `> ${intent}`,
+    "## Eligible actors",
+    roster,
+    "List the ordered character ids of the actors who need to act, one per line.",
+  ].join("\n\n")
+
+  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  const parsed = parseCharacterIdList(raw, candidates)
+  if (parsed.length > 0) return parsed
+  return [speaker.id]
+}
+
+/**
+ * Generates a single first-person sentence describing how `fulfiller` carries
+ * out their part of the already-consented request `intent` proposed by `speaker`.
+ */
+export async function generateFulfillmentMessage(args: {
+  backend: LLMBackend
+  context: SceneContext
+  messages: Message[]
+  fulfiller: Character
+  speakerName: string
+  intent: string
+  knowledge?: POVKnowledge
+  signal?: AbortSignal
+}): Promise<string> {
+  const { backend, context, messages, fulfiller, speakerName, intent } = args
+  const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
+  const metIds = args.knowledge?.metIds ?? new Set<string>()
+  const aliases = buildAliasMap(context.characters, fulfiller.id, knownNameIds)
+  const speakerCharacter = context.characters.find((c) => c.name === speakerName)
+  const speakerLabel = speakerCharacter
+    ? labelFor(speakerCharacter.id, speakerCharacter.name, aliases)
+    : speakerName
+
+  const system = [
+    `You are ${fulfiller.name}.`,
+    `${speakerLabel} requested: "${intent}". The request has been consented to by everyone involved.`,
+    `Write ONE short first-person sentence describing what you (${fulfiller.name}) do to carry out your part. Use "I"/"my"; never write your own name.`,
+    "Just the sentence. No preamble, no quotes, no label.",
+  ].join("\n")
+
+  const prompt = [
+    baseSceneBlock(context, messages, {
+      povCharacterId: fulfiller.id,
+      povKnownNameIds: knownNameIds,
+      povMetIds: metIds,
+    }),
+    `Now write what you do to fulfill the request "${intent}".`,
+  ].join("\n\n")
+
+  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  return raw.trim().replace(/^["'`\s]+|["'`\s]+$/g, "")
+}
+
 export interface StreamCharacterTurnArgs {
   backend: LLMBackend
   context: SceneContext
@@ -834,6 +944,10 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
         ]
       : []
 
+  const oneActionRule = [
+    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue or a thought if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
+  ]
+
   const refusalLines = (refusals ?? [])
     .map((r) => {
       const alias = aliases ? labelFor(r.characterId, r.characterName, aliases) : r.characterName
@@ -862,7 +976,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     character != null
       ? [
           ...otherCharactersRules,
-          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with brief actions or observations as appropriate, but only your own.",
+          ...oneActionRule,
+          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action or observation as appropriate, but only your own.",
           `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
           "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
