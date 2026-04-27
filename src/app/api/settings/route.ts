@@ -8,6 +8,7 @@ const settingsSchema = z.object({
   useLocalLlm: z.boolean().optional(),
   requireConsent: z.boolean().optional(),
   memoriesEnabled: z.boolean().optional(),
+  learnNames: z.boolean().optional(),
 })
 
 export async function GET() {

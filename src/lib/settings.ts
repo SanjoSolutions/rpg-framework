@@ -4,12 +4,14 @@ export interface AppSettings {
   useLocalLlm: boolean
   requireConsent: boolean
   memoriesEnabled: boolean
+  learnNames: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   useLocalLlm: false,
   requireConsent: false,
   memoriesEnabled: false,
+  learnNames: false,
 }
 
 function ensureTable(): void {
@@ -32,6 +34,7 @@ export function getSettings(): AppSettings {
     useLocalLlm: map.get("useLocalLlm") === "true",
     requireConsent: map.get("requireConsent") === "true",
     memoriesEnabled: map.get("memoriesEnabled") === "true",
+    learnNames: map.get("learnNames") === "true",
   }
 }
 
@@ -48,6 +51,9 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.memoriesEnabled !== undefined) {
     stmt.run("memoriesEnabled", String(patch.memoriesEnabled))
+  }
+  if (patch.learnNames !== undefined) {
+    stmt.run("learnNames", String(patch.learnNames))
   }
   return getSettings()
 }

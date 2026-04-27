@@ -43,6 +43,8 @@ interface SettingsState {
   setRequireConsent: (value: boolean) => void
   memoriesEnabled: boolean
   setMemoriesEnabled: (value: boolean) => void
+  learnNames: boolean
+  setLearnNames: (value: boolean) => void
   voiceEnabled: boolean
   setVoiceEnabled: (value: boolean) => void
 }
@@ -54,6 +56,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [useLocalLlm, setUseLocalLlmState] = useState(false)
   const [requireConsent, setRequireConsentState] = useState(false)
   const [memoriesEnabled, setMemoriesEnabledState] = useState(false)
+  const [learnNames, setLearnNamesState] = useState(false)
   const voiceEnabled = useSyncExternalStore(subscribeVoice, readVoice, readVoiceServer)
 
   useEffect(() => {
@@ -65,6 +68,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (data && typeof data.useLocalLlm === "boolean") setUseLocalLlmState(data.useLocalLlm)
         if (data && typeof data.requireConsent === "boolean") setRequireConsentState(data.requireConsent)
         if (data && typeof data.memoriesEnabled === "boolean") setMemoriesEnabledState(data.memoriesEnabled)
+        if (data && typeof data.learnNames === "boolean") setLearnNamesState(data.learnNames)
       })
       .catch(() => {})
       .finally(() => {
@@ -102,6 +106,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }).catch(() => {})
   }, [])
 
+  const setLearnNames = useCallback((value: boolean) => {
+    setLearnNamesState(value)
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ learnNames: value }),
+    }).catch(() => {})
+  }, [])
+
   const setVoiceEnabled = useCallback((value: boolean) => {
     try {
       localStorage.setItem(VOICE_KEY, String(value))
@@ -121,6 +134,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setRequireConsent,
         memoriesEnabled,
         setMemoriesEnabled,
+        learnNames,
+        setLearnNames,
         voiceEnabled,
         setVoiceEnabled,
       }}

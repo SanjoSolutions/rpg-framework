@@ -86,13 +86,22 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const backend: LLMBackend = settings.useLocalLlm ? "nemomix-local" : "grok"
   const requireConsent = settings.requireConsent
   const memoriesEnabled = settings.memoriesEnabled
+  const learnNames = settings.learnNames
 
-  // Record that all present characters have now met each other (idempotent).
-  recordMutualMeetings(characters.map((c) => c.id))
-
-  let knowledgeMap: Map<string, KnowledgeView> = getKnowledgeForCharacters(
-    characters.map((c) => c.id),
-  )
+  let knowledgeMap: Map<string, KnowledgeView>
+  if (learnNames) {
+    // Record that all present characters have now met each other (idempotent).
+    recordMutualMeetings(characters.map((c) => c.id))
+    knowledgeMap = getKnowledgeForCharacters(characters.map((c) => c.id))
+  } else {
+    // Feature off: every character knows every other present character by name.
+    knowledgeMap = new Map()
+    const allIds = characters.map((c) => c.id)
+    for (const c of characters) {
+      const others = new Set(allIds.filter((id) => id !== c.id))
+      knowledgeMap.set(c.id, { knownNameIds: others, metIds: new Set(others) })
+    }
+  }
   const knowledgeFor = (characterId: string): POVKnowledge => {
     const view = knowledgeMap.get(characterId)
     return {
@@ -340,7 +349,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           }
         }
 
-        if (speaker.kind === "character" && characters.length >= 2) {
+        if (learnNames && speaker.kind === "character" && characters.length >= 2) {
           const unknownPairs: Array<{ knowerId: string; knownId: string }> = []
           for (const knower of characters) {
             const view = knowledgeMap.get(knower.id)
