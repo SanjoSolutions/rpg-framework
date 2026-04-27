@@ -84,6 +84,7 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const pendingAttemptsRef = useRef<AttemptUI[]>([])
+  const turnGenRef = useRef(0)
   const hasCharacters = characters.length > 0
 
   useEffect(() => {
@@ -134,11 +135,13 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
     setPendingTurn(null)
     setPendingAttempts([])
     pendingAttemptsRef.current = []
-    abortRef.current = new AbortController()
+    const myGen = ++turnGenRef.current
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       const res = await fetch(`/api/scenarios/${scenarioId}/turn`, {
         method: "POST",
-        signal: abortRef.current.signal,
+        signal: controller.signal,
       })
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "")
@@ -279,6 +282,12 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
                 }).catch(() => {})
               }
             }
+            // Re-enable inputs as soon as the user-visible turn lands. Memory
+            // and name-learning extraction still finish in the background.
+            if (turnGenRef.current === myGen) {
+              setBusy(false)
+              if (abortRef.current === controller) abortRef.current = null
+            }
           } else if (event === "memory_learned") {
             if (showMemories) refreshSceneMemories()
           } else if (event === "error") {
@@ -288,11 +297,15 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
       }
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return
-      setError(err instanceof Error ? err.message : "Turn failed")
+      if (turnGenRef.current === myGen) {
+        setError(err instanceof Error ? err.message : "Turn failed")
+      }
     } finally {
-      abortRef.current = null
-      setBusy(false)
-      setPendingTurn(null)
+      if (turnGenRef.current === myGen) {
+        if (abortRef.current === controller) abortRef.current = null
+        setBusy(false)
+        setPendingTurn(null)
+      }
     }
   }
 

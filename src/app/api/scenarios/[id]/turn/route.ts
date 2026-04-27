@@ -273,42 +273,48 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           attempts,
         })
 
+        const postTasks: Promise<unknown>[] = []
+
         if (memoriesEnabled && speaker.kind === "character" && speaker.characterId) {
           const speakerCharacter = characters.find((c) => c.id === speaker.characterId)
           if (speakerCharacter) {
-            try {
-              const recent = messages.slice(-6)
-              const extracted = await extractMemoriesFromTurn({
-                backend,
-                context,
-                speaker: speakerCharacter,
-                recentMessages: recent,
-                signal: request.signal,
-              })
-              for (const m of extracted) {
-                const stored = addMemory({
-                  ownerCharacterId: speakerCharacter.id,
-                  content: m.content,
-                  locationId: m.locationRelevant ? scenario.locationId : null,
-                  associatedCharacterIds: m.characterIds,
-                })
-                const resolveName = (id: string) =>
-                  characters.find((c) => c.id === id)?.name ?? id
-                send("memory_learned", {
-                  id: stored.id,
-                  ownerCharacterId: stored.ownerCharacterId,
-                  content: renderMemoryContent(stored.content, resolveName),
-                  rawContent: stored.content,
-                  locationId: stored.locationId,
-                  associatedCharacterIds: stored.associatedCharacterIds,
-                })
-              }
-            } catch (err) {
-              logger.warn(
-                { err: err instanceof Error ? err.message : String(err) },
-                "memory extraction failed",
-              )
-            }
+            postTasks.push(
+              (async () => {
+                try {
+                  const recent = messages.slice(-6)
+                  const extracted = await extractMemoriesFromTurn({
+                    backend,
+                    context,
+                    speaker: speakerCharacter,
+                    recentMessages: recent,
+                    signal: request.signal,
+                  })
+                  for (const m of extracted) {
+                    const stored = addMemory({
+                      ownerCharacterId: speakerCharacter.id,
+                      content: m.content,
+                      locationId: m.locationRelevant ? scenario.locationId : null,
+                      associatedCharacterIds: m.characterIds,
+                    })
+                    const resolveName = (id: string) =>
+                      characters.find((c) => c.id === id)?.name ?? id
+                    send("memory_learned", {
+                      id: stored.id,
+                      ownerCharacterId: stored.ownerCharacterId,
+                      content: renderMemoryContent(stored.content, resolveName),
+                      rawContent: stored.content,
+                      locationId: stored.locationId,
+                      associatedCharacterIds: stored.associatedCharacterIds,
+                    })
+                  }
+                } catch (err) {
+                  logger.warn(
+                    { err: err instanceof Error ? err.message : String(err) },
+                    "memory extraction failed",
+                  )
+                }
+              })(),
+            )
           }
         }
 
@@ -323,38 +329,44 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             }
           }
           if (unknownPairs.length > 0) {
-            try {
-              const recent = messages.slice(-4)
-              const learnings = await extractNameLearningsFromTurn({
-                backend,
-                context,
-                recentMessages: recent,
-                unknownPairs,
-                signal: request.signal,
-              })
-              for (const l of learnings) {
-                const changed = markKnowsName(l.knowerId, l.knownId)
-                if (!changed) continue
-                const knower = characters.find((c) => c.id === l.knowerId)
-                const known = characters.find((c) => c.id === l.knownId)
-                send("name_learned", {
-                  knowerId: l.knowerId,
-                  knownId: l.knownId,
-                  knowerName: knower?.name ?? null,
-                  knownName: known?.name ?? null,
-                })
-              }
-              if (learnings.length > 0) {
-                knowledgeMap = getKnowledgeForCharacters(characters.map((c) => c.id))
-              }
-            } catch (err) {
-              logger.warn(
-                { err: err instanceof Error ? err.message : String(err) },
-                "name-learning extraction failed",
-              )
-            }
+            postTasks.push(
+              (async () => {
+                try {
+                  const recent = messages.slice(-4)
+                  const learnings = await extractNameLearningsFromTurn({
+                    backend,
+                    context,
+                    recentMessages: recent,
+                    unknownPairs,
+                    signal: request.signal,
+                  })
+                  for (const l of learnings) {
+                    const changed = markKnowsName(l.knowerId, l.knownId)
+                    if (!changed) continue
+                    const knower = characters.find((c) => c.id === l.knowerId)
+                    const known = characters.find((c) => c.id === l.knownId)
+                    send("name_learned", {
+                      knowerId: l.knowerId,
+                      knownId: l.knownId,
+                      knowerName: knower?.name ?? null,
+                      knownName: known?.name ?? null,
+                    })
+                  }
+                  if (learnings.length > 0) {
+                    knowledgeMap = getKnowledgeForCharacters(characters.map((c) => c.id))
+                  }
+                } catch (err) {
+                  logger.warn(
+                    { err: err instanceof Error ? err.message : String(err) },
+                    "name-learning extraction failed",
+                  )
+                }
+              })(),
+            )
           }
         }
+
+        if (postTasks.length > 0) await Promise.allSettled(postTasks)
 
         send("done", {})
       } catch (error) {
