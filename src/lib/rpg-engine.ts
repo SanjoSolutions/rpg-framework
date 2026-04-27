@@ -833,21 +833,21 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       return `- ${alias} declined.`
     })
     .join("\n")
-  const intentLine = intent?.trim() ? `Your intended action this turn: ${intent.trim()}` : ""
+  const intentLine = intent?.trim() ? `Your negotiated intent for this turn: ${intent.trim()}` : ""
   const consentBlock =
     refusalLines.length > 0
       ? [
           intentLine,
-          "However, the following characters did NOT consent and you must NOT carry out the action against them:",
+          "The following characters did NOT consent, so you cannot carry the intent out as stated:",
           refusalLines,
-          "Take your turn anyway, but do not perform the refused action. Acknowledge the refusal in character, change course, or do something else.",
+          "Your turn must still REVOLVE around this intent. React to the block in character — voice your reaction, push back verbally, change tack, withdraw, or pivot to a verbal alternative — but stay on the subject of the intent. Do not drift to an unrelated topic or invent a different action.",
         ]
           .filter(Boolean)
           .join("\n")
       : intent?.trim()
         ? [
             intentLine,
-            "All affected characters consented. Carry out your action in character.",
+            "All affected characters consented. Your turn ENACTS this intent — that specific action is the point of your reply, what you actually deliver. You may surround it with a few words of dialogue, thought, or sensory detail, but the negotiated intent must be what your message is about. Do not substitute an unrelated action or skip past it.",
           ].join("\n")
         : ""
 
