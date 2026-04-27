@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { ScenarioPlay } from "@/components/scenario-play"
 import { Button } from "@/components/ui/button"
 import { getCharacter } from "@/lib/characters"
-import { getLocation } from "@/lib/locations"
+import { getLocation, type Location } from "@/lib/locations"
 import { listMessageMetaForScenario, listMessages } from "@/lib/messages"
 import { getScenario } from "@/lib/scenarios"
 
@@ -18,12 +18,17 @@ export default async function PlayScenarioPage({
   const scenario = getScenario(id)
   if (!scenario) notFound()
 
-  const location = scenario.locationId ? getLocation(scenario.locationId) : null
   const characters = scenario.characterIds
     .map((cid) => getCharacter(cid))
     .filter((c): c is NonNullable<typeof c> => c != null)
+  const attachedLocations = scenario.locationIds
+    .map((lid) => getLocation(lid))
+    .filter((l): l is Location => l != null)
   const messages = listMessages(scenario.id)
   const messageMeta = listMessageMetaForScenario(scenario.id)
+  const activeLocation = scenario.locationId
+    ? attachedLocations.find((l) => l.id === scenario.locationId) ?? null
+    : null
 
   return (
     <div className="mx-auto max-w-4xl h-full flex flex-col">
@@ -31,7 +36,7 @@ export default async function PlayScenarioPage({
         <div className="min-w-0">
           <h1 className="text-xl font-semibold truncate">{scenario.name}</h1>
           <p className="text-sm text-muted-foreground truncate">
-            {location ? `at ${location.name} · ` : ""}
+            {activeLocation ? `at ${activeLocation.name} · ` : ""}
             {characters.length === 0
               ? "no characters"
               : characters.map((c) => c.name).join(", ")}
@@ -43,6 +48,9 @@ export default async function PlayScenarioPage({
       </div>
       <ScenarioPlay
         scenarioId={scenario.id}
+        initialActiveLocationId={scenario.locationId}
+        initialCharacterLocations={scenario.characterLocations}
+        attachedLocations={attachedLocations}
         initialMessages={messages}
         initialMessageMeta={messageMeta}
         characters={characters}

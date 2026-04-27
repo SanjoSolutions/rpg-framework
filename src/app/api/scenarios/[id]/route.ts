@@ -9,6 +9,8 @@ const scenarioSchema = z.object({
   summary: z.string().max(8000).optional(),
   locationId: z.string().nullable().optional(),
   characterIds: z.array(z.string()).optional(),
+  locationIds: z.array(z.string()).optional(),
+  characterLocations: z.record(z.string(), z.string().nullable()).optional(),
 })
 
 export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {

@@ -51,9 +51,19 @@ function applySchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS scenario_characters (
       scenario_id TEXT NOT NULL,
       character_id TEXT NOT NULL,
+      location_id TEXT,
       PRIMARY KEY (scenario_id, character_id),
       FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
-      FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+      FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scenario_locations (
+      scenario_id TEXT NOT NULL,
+      location_id TEXT NOT NULL,
+      PRIMARY KEY (scenario_id, location_id),
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -125,6 +135,33 @@ function applySchema(db: Database.Database): void {
   if (!columnNames.has("stranger_name")) {
     db.exec("ALTER TABLE characters ADD COLUMN stranger_name TEXT NOT NULL DEFAULT ''")
   }
+
+  const scenarioCharColumns = db
+    .prepare("SELECT name FROM pragma_table_info('scenario_characters')")
+    .all() as { name: string }[]
+  const scenarioCharColumnNames = new Set(scenarioCharColumns.map((c) => c.name))
+  if (!scenarioCharColumnNames.has("location_id")) {
+    db.exec("ALTER TABLE scenario_characters ADD COLUMN location_id TEXT")
+    // Place each existing scenario character at their scenario's location.
+    db.exec(`
+      UPDATE scenario_characters
+         SET location_id = (
+           SELECT location_id FROM scenarios WHERE scenarios.id = scenario_characters.scenario_id
+         )
+       WHERE location_id IS NULL
+    `)
+  }
+
+  // Ensure scenario_locations contains every scenario's primary location.
+  db.exec(`
+    INSERT OR IGNORE INTO scenario_locations (scenario_id, location_id)
+    SELECT id, location_id FROM scenarios WHERE location_id IS NOT NULL
+  `)
+  // Ensure every per-character location is also listed in scenario_locations.
+  db.exec(`
+    INSERT OR IGNORE INTO scenario_locations (scenario_id, location_id)
+    SELECT scenario_id, location_id FROM scenario_characters WHERE location_id IS NOT NULL
+  `)
 
   // Backfill empty stranger_name values with unique "Stranger N" labels.
   const missing = db

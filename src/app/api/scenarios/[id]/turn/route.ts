@@ -7,6 +7,7 @@ import {
 } from "@/lib/acquaintances"
 import { getCharacter } from "@/lib/characters"
 import { getLocation } from "@/lib/locations"
+import type { Location } from "@/lib/locations"
 import {
   addMemory,
   listMemoriesForScene,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/messages"
 import {
   extractMemoriesFromTurn,
+  extractMovementsFromTurn,
   extractNameLearningsFromTurn,
   pickNextSpeaker,
   proposeIntent,
@@ -32,7 +34,7 @@ import {
   type PreviousAttempt,
   type SceneContext,
 } from "@/lib/rpg-engine"
-import { getScenario, touchScenario } from "@/lib/scenarios"
+import { getScenario, setCharacterLocation, touchScenario } from "@/lib/scenarios"
 import { getSettings } from "@/lib/settings"
 import { getLogger } from "@/lib/logger"
 import type { LLMBackend } from "@/lib/llm"
@@ -46,18 +48,38 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const scenario = getScenario(id)
   if (!scenario) return new Response("Scenario not found", { status: 404 })
 
-  const characters = scenario.characterIds
+  const allCharacters = scenario.characterIds
     .map((cid) => getCharacter(cid))
     .filter((c): c is NonNullable<typeof c> => c != null)
 
-  if (characters.length === 0) {
+  if (allCharacters.length === 0) {
     return new Response("Add at least one character to this scenario before generating a turn.", {
       status: 400,
     })
   }
 
+  // Cast = characters whose current placement matches the active scene location.
+  // A character with no recorded placement is treated as being at the active location.
+  const isPresent = (characterId: string): boolean => {
+    const placed = scenario.characterLocations[characterId] ?? null
+    if (placed === null) return true
+    return placed === scenario.locationId
+  }
+  const characters = allCharacters.filter((c) => isPresent(c.id))
+
+  if (characters.length === 0) {
+    return new Response(
+      "No characters are at the current scene location. Move someone there or switch the active scene.",
+      { status: 400 },
+    )
+  }
+
   const location = scenario.locationId ? getLocation(scenario.locationId) : null
   const messages = listMessages(scenario.id)
+  const otherLocationIds = scenario.locationIds.filter((lid) => lid !== scenario.locationId)
+  const otherLocations = otherLocationIds
+    .map((lid) => getLocation(lid))
+    .filter((l): l is Location => l != null)
 
   const context: SceneContext = { scenario, location, characters }
   const settings = getSettings()
@@ -364,6 +386,41 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               })(),
             )
           }
+        }
+
+        if (otherLocations.length > 0 && characters.length > 0) {
+          postTasks.push(
+            (async () => {
+              try {
+                const recent = messages.slice(-4)
+                const movements = await extractMovementsFromTurn({
+                  backend,
+                  context,
+                  recentMessages: recent,
+                  destinations: otherLocations,
+                  signal: request.signal,
+                })
+                for (const m of movements) {
+                  const ok = setCharacterLocation(scenario.id, m.characterId, m.destinationLocationId)
+                  if (!ok) continue
+                  const character = characters.find((c) => c.id === m.characterId)
+                  const destination = otherLocations.find((l) => l.id === m.destinationLocationId)
+                  send("character_moved", {
+                    characterId: m.characterId,
+                    characterName: character?.name ?? null,
+                    fromLocationId: scenario.locationId,
+                    toLocationId: m.destinationLocationId,
+                    toLocationName: destination?.name ?? null,
+                  })
+                }
+              } catch (err) {
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  "movement extraction failed",
+                )
+              }
+            })(),
+          )
         }
 
         if (postTasks.length > 0) await Promise.allSettled(postTasks)

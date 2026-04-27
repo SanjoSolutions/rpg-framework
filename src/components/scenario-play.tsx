@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useDevSidebar } from "@/hooks/use-dev-sidebar"
 import { useSettings } from "@/hooks/use-settings"
 import type { Character } from "@/lib/characters"
+import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
@@ -40,6 +41,9 @@ interface Props {
   initialMessages: Message[]
   initialMessageMeta?: Record<string, MessageMeta>
   characters: Character[]
+  attachedLocations: Location[]
+  initialActiveLocationId: string | null
+  initialCharacterLocations: Record<string, string | null>
 }
 
 function seedMessageConsents(
@@ -63,10 +67,20 @@ function seedMessageConsents(
   return out
 }
 
-export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, characters }: Props) {
+export function ScenarioPlay({
+  scenarioId,
+  initialMessages,
+  initialMessageMeta,
+  characters,
+  attachedLocations,
+  initialActiveLocationId,
+  initialCharacterLocations,
+}: Props) {
   const { voiceEnabled, setVoiceEnabled } = useSettings()
   const { showRawMessages, showMemories } = useDevSidebar()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
+  const [placement, setPlacement] = useState<Record<string, string | null>>(initialCharacterLocations)
   const [input, setInput] = useState("")
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
   const [pendingAttempts, setPendingAttempts] = useState<AttemptUI[]>([])
@@ -85,7 +99,48 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
   const transcriptRef = useRef<HTMLDivElement>(null)
   const pendingAttemptsRef = useRef<AttemptUI[]>([])
   const turnGenRef = useRef(0)
-  const hasCharacters = characters.length > 0
+
+  function locationOf(characterId: string): string | null {
+    if (Object.prototype.hasOwnProperty.call(placement, characterId)) {
+      return placement[characterId]
+    }
+    return null
+  }
+
+  function isPresent(characterId: string): boolean {
+    const lid = locationOf(characterId)
+    if (lid === null) return true
+    return lid === activeLocationId
+  }
+
+  const presentCharacters = characters.filter((c) => isPresent(c.id))
+  const hasCharacters = presentCharacters.length > 0
+
+  async function switchActiveScene(locationId: string | null) {
+    setActiveLocationId(locationId)
+    try {
+      await fetch(`/api/scenarios/${scenarioId}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: null, locationId, setActive: true }),
+      })
+    } catch {
+      // best effort — UI state stays
+    }
+  }
+
+  async function moveCharacter(characterId: string, locationId: string | null) {
+    setPlacement((current) => ({ ...current, [characterId]: locationId }))
+    try {
+      await fetch(`/api/scenarios/${scenarioId}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, locationId }),
+      })
+    } catch {
+      // best effort
+    }
+  }
 
   useEffect(() => {
     fetch("/api/tts/health")
@@ -290,6 +345,9 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
             }
           } else if (event === "memory_learned") {
             if (showMemories) refreshSceneMemories()
+          } else if (event === "character_moved") {
+            const p = payload as { characterId: string; toLocationId: string }
+            setPlacement((current) => ({ ...current, [p.characterId]: p.toLocationId }))
           } else if (event === "error") {
             setError((payload as { message: string }).message)
           }
@@ -361,6 +419,17 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      {attachedLocations.length > 0 && (
+        <LocationsBar
+          locations={attachedLocations}
+          characters={characters}
+          activeLocationId={activeLocationId}
+          locationOf={locationOf}
+          onActivate={switchActiveScene}
+          onMove={moveCharacter}
+          disabled={busy}
+        />
+      )}
       <div className="flex flex-1 min-h-0">
         <div ref={transcriptRef} className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-3">
           {messages.length === 0 && !pendingTurn && (
@@ -437,6 +506,94 @@ export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, 
           </div>
         </div>
       </form>
+    </div>
+  )
+}
+
+function LocationsBar({
+  locations,
+  characters,
+  activeLocationId,
+  locationOf,
+  onActivate,
+  onMove,
+  disabled,
+}: {
+  locations: Location[]
+  characters: Character[]
+  activeLocationId: string | null
+  locationOf: (characterId: string) => string | null
+  onActivate: (locationId: string) => void
+  onMove: (characterId: string, locationId: string) => void
+  disabled: boolean
+}) {
+  const moveOptions = locations.filter((l) => l.id !== activeLocationId)
+  const charactersAt = (locationId: string) =>
+    characters.filter((c) => {
+      const lid = locationOf(c.id)
+      // Unassigned characters live at the active location.
+      if (lid === null) return locationId === activeLocationId
+      return lid === locationId
+    })
+  return (
+    <div className="border-b border-border px-6 py-2 flex flex-wrap gap-2 items-stretch">
+      {locations.map((loc) => {
+        const here = charactersAt(loc.id)
+        const active = loc.id === activeLocationId
+        return (
+          <div
+            key={loc.id}
+            className={`rounded-md border px-3 py-2 text-xs flex flex-col gap-1 min-w-[140px] ${
+              active ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium truncate">{loc.name}</span>
+              {active ? (
+                <span className="text-[10px] uppercase tracking-wide text-primary">scene</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onActivate(loc.id)}
+                  disabled={disabled}
+                  className="text-[10px] underline text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  switch here
+                </button>
+              )}
+            </div>
+            {here.length === 0 ? (
+              <span className="text-muted-foreground italic">empty</span>
+            ) : (
+              <ul className="space-y-0.5">
+                {here.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{c.name}</span>
+                    {moveOptions.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) onMove(c.id, e.target.value)
+                        }}
+                        disabled={disabled}
+                        aria-label={`Move ${c.name}`}
+                        className="rounded border border-input bg-background px-1 text-[10px]"
+                      >
+                        <option value="">move…</option>
+                        {moveOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            → {opt.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

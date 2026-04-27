@@ -4,10 +4,12 @@ import {
   parseConsentResponse,
   parseExtractedMemories,
   parseIntentProposal,
+  parseMovementProposals,
   parseSpeakerCandidates,
   pickNextSpeaker,
 } from "./rpg-engine"
 import type { Character } from "./characters"
+import type { Location } from "./locations"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
 
@@ -17,8 +19,14 @@ const baseScenario: Scenario = {
   summary: "",
   locationId: null,
   characterIds: [],
+  locationIds: [],
+  characterLocations: {},
   createdAt: 0,
   updatedAt: 0,
+}
+
+function makeLocation(id: string, name: string): Location {
+  return { id, name, description: "", createdAt: 0, updatedAt: 0 }
 }
 
 function makeCharacter(id: string, name: string, strangerName?: string): Character {
@@ -265,5 +273,55 @@ describe("parseExtractedMemories", () => {
     const out = parseExtractedMemories(raw, candidates)
     expect(out).toHaveLength(1)
     expect(out[0].content).toBe("Real memory")
+  })
+})
+
+describe("parseMovementProposals", () => {
+  const aria = makeCharacter("c1", "Aria")
+  const jenny = makeCharacter("c2", "Jenny")
+  const cast = [aria, jenny]
+  const tavern = makeLocation("l1", "Tavern")
+  const market = makeLocation("l2", "Market")
+  const destinations = [tavern, market]
+
+  it("parses a single move", () => {
+    const raw = "1. c1 -> l2"
+    expect(parseMovementProposals(raw, cast, destinations)).toEqual([
+      { characterId: "c1", destinationLocationId: "l2" },
+    ])
+  })
+
+  it("parses multiple moves on separate lines", () => {
+    const raw = "1. c1 -> l2\n2. c2 -> l2"
+    expect(parseMovementProposals(raw, cast, destinations)).toEqual([
+      { characterId: "c1", destinationLocationId: "l2" },
+      { characterId: "c2", destinationLocationId: "l2" },
+    ])
+  })
+
+  it("accepts alternative arrows and verbs", () => {
+    const raw = "1. c1 moves to l1\n2. c2 → l2"
+    expect(parseMovementProposals(raw, cast, destinations)).toEqual([
+      { characterId: "c1", destinationLocationId: "l1" },
+      { characterId: "c2", destinationLocationId: "l2" },
+    ])
+  })
+
+  it("returns empty for NONE", () => {
+    expect(parseMovementProposals("NONE", cast, destinations)).toEqual([])
+  })
+
+  it("ignores ids not in the cast or destinations", () => {
+    const raw = "1. c1 -> l99\n2. c99 -> l1\n3. c2 -> l1"
+    expect(parseMovementProposals(raw, cast, destinations)).toEqual([
+      { characterId: "c2", destinationLocationId: "l1" },
+    ])
+  })
+
+  it("dedupes identical proposals", () => {
+    const raw = "1. c1 -> l2\n2. c1 -> l2"
+    expect(parseMovementProposals(raw, cast, destinations)).toEqual([
+      { characterId: "c1", destinationLocationId: "l2" },
+    ])
   })
 })

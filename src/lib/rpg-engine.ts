@@ -534,6 +534,96 @@ export async function extractMemoriesFromTurn(args: {
   return parseExtractedMemories(raw, others, context.characters)
 }
 
+export interface MovementProposal {
+  characterId: string
+  destinationLocationId: string
+}
+
+const MOVEMENT_LINE_REGEX =
+  /^\s*\d+\s*[\.\)]\s*([^\s|,]+)\s*(?:->|→|=>|moves to|goes to|leaves to|leaves for|departs to)\s*([^\s|,]+)/i
+
+export function parseMovementProposals(
+  raw: string,
+  cast: Character[],
+  destinations: Location[],
+): MovementProposal[] {
+  const characterIds = new Set(cast.map((c) => c.id))
+  const locationIds = new Set(destinations.map((l) => l.id))
+  const seen = new Set<string>()
+  const out: MovementProposal[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    if (/^\s*none\s*$/i.test(line)) return []
+    const m = MOVEMENT_LINE_REGEX.exec(line)
+    if (!m) continue
+    const characterId = m[1].trim()
+    const destinationLocationId = m[2].trim()
+    if (!characterIds.has(characterId)) continue
+    if (!locationIds.has(destinationLocationId)) continue
+    const key = `${characterId}->${destinationLocationId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ characterId, destinationLocationId })
+  }
+  return out
+}
+
+/**
+ * After a turn, asks the LLM whether any present characters left the active scene
+ * for another known location — alone or as a group. Companion movements are only
+ * accepted if the recent transcript shows the companion agreed (verbally or by action).
+ */
+export async function extractMovementsFromTurn(args: {
+  backend: LLMBackend
+  context: SceneContext
+  recentMessages: Message[]
+  destinations: Location[]
+  signal?: AbortSignal
+}): Promise<MovementProposal[]> {
+  const { backend, context, recentMessages, destinations } = args
+  if (recentMessages.length === 0 || destinations.length === 0) return []
+  if (context.characters.length === 0) return []
+
+  const cast = context.characters
+    .map((c) => `- ${c.name} (id: ${c.id})`)
+    .join("\n")
+  const places = destinations
+    .map((l) => `- ${l.name} (id: ${l.id})`)
+    .join("\n")
+  const transcript = recentMessages
+    .map((m) => {
+      if (m.speakerKind === "narrator") return `[Narrator]: ${m.content}`
+      if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
+      return `[${m.speakerName}]: ${m.content}`
+    })
+    .join("\n")
+
+  const currentLocationName = context.location?.name ?? "(no location)"
+
+  const system = [
+    "You decide whether any present characters LEFT the current scene for another known location during the recent turn(s).",
+    "Only mark a character as moving if the transcript shows them clearly departing — not merely talking about leaving, planning, or considering it.",
+    "A character may take companions only if the companion agreed (verbally or by clearly following along). If a companion declined or stayed silent, do NOT mark them as moving.",
+    "The destination must be one of the listed known locations. If the destination isn't on the list, do NOT mark the move.",
+    "Output strictly one line per departing character, in this exact format:",
+    "1. <character_id> -> <destination_location_id>",
+    "If nobody left, output exactly: NONE",
+  ].join("\n")
+
+  const prompt = [
+    `## Current scene location: ${currentLocationName}`,
+    `## Cast present (eligible movers)`,
+    cast,
+    `## Known destinations (eligible targets — anywhere else)`,
+    places,
+    `## Recent turn(s)`,
+    transcript,
+    "Which characters (if any) left the current scene for one of the known destinations? Use the ids from the lists above.",
+  ].join("\n\n")
+
+  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  return parseMovementProposals(raw, context.characters, destinations)
+}
+
 export interface NameLearning {
   knowerId: string
   knownId: string
