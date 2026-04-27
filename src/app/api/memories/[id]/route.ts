@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { deleteMemory, getMemory, updateMemory } from "@/lib/memories"
+import { listCharacters } from "@/lib/characters"
+import {
+  deleteMemory,
+  getMemory,
+  normalizeMemoryReferences,
+  updateMemory,
+} from "@/lib/memories"
 
 export const runtime = "nodejs"
 
@@ -24,7 +30,11 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
-  const memory = updateMemory(id, parsed.data)
+  const characters = listCharacters()
+  const patch = parsed.data.content !== undefined
+    ? { ...parsed.data, content: normalizeMemoryReferences(parsed.data.content, characters) }
+    : parsed.data
+  const memory = updateMemory(id, patch)
   if (!memory) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ memory })
 }

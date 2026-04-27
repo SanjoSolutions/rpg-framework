@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import type { Character } from "@/lib/characters"
 import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
+import { renderMemoryContent } from "@/lib/memory-text"
 
 interface Props {
   initialMemories: Memory[]
@@ -361,6 +362,10 @@ function MemoryRow({
     .map((id) => characterById.get(id)?.name)
     .filter((n): n is string => !!n)
   const locationName = memory.locationId ? locationById.get(memory.locationId)?.name : null
+  const rendered = renderMemoryContent(
+    memory.content,
+    (id) => characterById.get(id)?.name ?? id,
+  )
 
   return (
     <li className="rounded-xl border border-border p-4 space-y-2">
@@ -377,7 +382,7 @@ function MemoryRow({
           </Button>
         </div>
       </div>
-      <p className="text-sm">{memory.content}</p>
+      <p className="text-sm">{rendered}</p>
       {(associatedNames.length > 0 || locationName) && (
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           {associatedNames.map((n) => (

@@ -1,6 +1,11 @@
 import type { Character } from "./characters"
 import type { Location } from "./locations"
-import type { Memory } from "./memories"
+import {
+  extractReferencedCharacterIds,
+  normalizeMemoryReferences,
+  renderMemoryContent,
+  type Memory,
+} from "./memories"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
 import { generateOnce, streamChat, type ChatMessage, type LLMBackend } from "./llm"
@@ -51,6 +56,32 @@ function describeCharacterFull(character: Character): string {
   return parts.join("\n")
 }
 
+function describeCharacterAcquaintance(character: Character): string {
+  const parts = [`### ${character.name}`]
+  parts.push(
+    character.appearance.trim()
+      ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
+      : "Appearance: (nothing notable to your eye)",
+  )
+  parts.push(
+    "(You know them by name from before. Their inner self is still their own — you only observe what they say and do.)",
+  )
+  return parts.join("\n")
+}
+
+function describeCharacterRecognized(character: Character, alias: string): string {
+  const parts = [`### ${alias}`]
+  parts.push(
+    character.appearance.trim()
+      ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
+      : "Appearance: (nothing notable to your eye)",
+  )
+  parts.push(
+    "(You've encountered them before but never learned their name. Their inner self is still unknown to you.)",
+  )
+  return parts.join("\n")
+}
+
 function describeCharacterStranger(character: Character, alias: string): string {
   const parts = [`### ${alias}`]
   parts.push(
@@ -62,13 +93,22 @@ function describeCharacterStranger(character: Character, alias: string): string 
   return parts.join("\n")
 }
 
-export function buildAliasMap(characters: Character[], povId: string): Map<string, string> {
+/**
+ * Builds the per-POV alias map used to label other characters in prompts.
+ * Characters whose name the POV knows are NOT inserted into the map — callers
+ * should fall back to the character's real name in that case. Strangers are
+ * mapped to their persistent, globally-unique stranger name.
+ */
+export function buildAliasMap(
+  characters: Character[],
+  povId: string,
+  knownNameIds?: ReadonlySet<string>,
+): Map<string, string> {
   const map = new Map<string, string>()
-  let counter = 1
   for (const c of characters) {
     if (c.id === povId) continue
-    map.set(c.id, `Stranger ${counter}`)
-    counter += 1
+    if (knownNameIds?.has(c.id)) continue
+    map.set(c.id, c.strangerName || `Stranger ${c.id.slice(0, 4)}`)
   }
   return map
 }
@@ -90,6 +130,8 @@ function buildHistory(messages: Message[], aliases: Map<string, string> | null):
 
 interface SceneBlockOpts {
   povCharacterId?: string | null
+  povKnownNameIds?: ReadonlySet<string>
+  povMetIds?: ReadonlySet<string>
 }
 
 function baseSceneBlock(
@@ -98,16 +140,20 @@ function baseSceneBlock(
   opts: SceneBlockOpts = {},
 ): string {
   const povId = opts.povCharacterId ?? null
-  const aliases = povId ? buildAliasMap(context.characters, povId) : null
+  const knownNameIds = opts.povKnownNameIds ?? new Set<string>()
+  const metIds = opts.povMetIds ?? new Set<string>()
+  const aliases = povId ? buildAliasMap(context.characters, povId, knownNameIds) : null
 
   const characterBlock =
     context.characters.length > 0
       ? context.characters
           .map((c) => {
-            if (povId && c.id !== povId) {
-              return describeCharacterStranger(c, aliases!.get(c.id) ?? "Stranger")
-            }
-            return describeCharacterFull(c)
+            if (!povId || c.id === povId) return describeCharacterFull(c)
+            if (knownNameIds.has(c.id)) return describeCharacterAcquaintance(c)
+            const alias = aliases!.get(c.id) ?? "Stranger"
+            return metIds.has(c.id)
+              ? describeCharacterRecognized(c, alias)
+              : describeCharacterStranger(c, alias)
           })
           .join("\n\n")
       : "(no characters in this scenario yet)"
@@ -269,11 +315,25 @@ export interface PreviousAttempt {
   refusedTargetIds: string[]
 }
 
+export interface POVKnowledge {
+  knownNameIds?: ReadonlySet<string>
+  metIds?: ReadonlySet<string>
+}
+
+function labelFor(
+  characterId: string,
+  fallbackName: string,
+  aliases: Map<string, string>,
+): string {
+  return aliases.get(characterId) ?? fallbackName
+}
+
 export async function proposeIntent(args: {
   backend: LLMBackend
   context: SceneContext
   messages: Message[]
   speaker: Character
+  knowledge?: POVKnowledge
   previousAttempts?: PreviousAttempt[]
   signal?: AbortSignal
 }): Promise<IntentProposal> {
@@ -283,9 +343,11 @@ export async function proposeIntent(args: {
     return { intent: "", targetIds: [] }
   }
 
-  const aliases = buildAliasMap(context.characters, speaker.id)
+  const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
+  const metIds = args.knowledge?.metIds ?? new Set<string>()
+  const aliases = buildAliasMap(context.characters, speaker.id, knownNameIds)
   const roster = others
-    .map((c) => `- ${aliases.get(c.id) ?? c.id} (id: ${c.id})`)
+    .map((c) => `- ${labelFor(c.id, c.name, aliases)} (id: ${c.id})`)
     .join("\n")
 
   const previousBlock =
@@ -294,7 +356,10 @@ export async function proposeIntent(args: {
           "## Previous attempts THIS TURN — already refused",
           ...previousAttempts.map((a) => {
             const refusedAliases = a.refusedTargetIds
-              .map((id) => aliases.get(id) ?? id)
+              .map((id) => {
+                const c = context.characters.find((cc) => cc.id === id)
+                return labelFor(id, c?.name ?? id, aliases)
+              })
               .join(", ")
             return `- "${a.intent}" → refused by ${refusedAliases}`
           }),
@@ -314,7 +379,11 @@ export async function proposeIntent(args: {
   ].join("\n")
 
   const prompt = [
-    baseSceneBlock(context, messages, { povCharacterId: speaker.id }),
+    baseSceneBlock(context, messages, {
+      povCharacterId: speaker.id,
+      povKnownNameIds: knownNameIds,
+      povMetIds: metIds,
+    }),
     "## Roster (other characters present)",
     roster,
     previousBlock,
@@ -379,6 +448,7 @@ const MEMORY_LINE_REGEX =
 export function parseExtractedMemories(
   raw: string,
   candidates: Character[],
+  allCharacters: Character[] = candidates,
 ): ExtractedMemory[] {
   const lines = raw.split(/\r?\n/)
   const out: ExtractedMemory[] = []
@@ -386,18 +456,24 @@ export function parseExtractedMemories(
     if (/^\s*none\s*$/i.test(line)) return []
     const m = MEMORY_LINE_REGEX.exec(line)
     if (!m) continue
-    const content = m[1].trim()
-    if (!content) continue
+    const rawContent = m[1].trim()
+    if (!rawContent) continue
+    const content = normalizeMemoryReferences(rawContent, allCharacters)
     const charsRaw = m[2].trim()
     const locRaw = m[3].trim()
     const matchedChars =
       charsRaw && !/^none$/i.test(charsRaw)
         ? parseSpeakerCandidates(charsRaw, candidates).map((c) => c.id)
         : []
+    // Augment with any IDs referenced inline via [char:UUID] placeholders.
+    const inlineIds = extractReferencedCharacterIds(content).filter((id) =>
+      candidates.some((c) => c.id === id),
+    )
+    const merged = [...new Set([...matchedChars, ...inlineIds])]
     const locationRelevant = /^(yes|y|true)$/i.test(locRaw)
     out.push({
       content,
-      characterIds: matchedChars,
+      characterIds: merged,
       locationRelevant,
     })
   }
@@ -415,10 +491,11 @@ export async function extractMemoriesFromTurn(args: {
   if (recentMessages.length === 0) return []
 
   const others = context.characters.filter((c) => c.id !== speaker.id)
-  const roster =
-    others.length > 0
-      ? others.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
-      : "(no other characters)"
+  const fullRosterLines = [
+    `- ${speaker.name} (id: ${speaker.id}) — the rememberer`,
+    ...others.map((c) => `- ${c.name} (id: ${c.id})`),
+  ]
+  const roster = fullRosterLines.join("\n")
   const locationName = context.location?.name ?? "(no location set)"
 
   const transcript = recentMessages
@@ -431,29 +508,125 @@ export async function extractMemoriesFromTurn(args: {
 
   const system = [
     `You extract long-term memories worth keeping for ${speaker.name}, from their first-person POV.`,
-    "Focus ONLY on things that would still matter to ${speaker.name} days, weeks, or scenes from now — durable facts that shape future decisions or relationships.".replace("${speaker.name}", speaker.name),
+    `Focus ONLY on things that would still matter to ${speaker.name} days, weeks, or scenes from now — durable facts that shape future decisions or relationships.`,
     "GOOD candidates: someone's name once revealed, a confided secret, a past event in their life, a stated goal or fear, a strong-held opinion or value, a promise made or broken, a bond formed, a betrayal, a learned skill or fact about the world, a permanent change in the relationship.",
     "BAD candidates (do NOT extract): what someone is wearing or doing right now, fleeting moods, who blushed or laughed, immediate physical sensations, current location detail, restating the scene setup, generic observations, anything that will be irrelevant by next scene.",
     "Be conservative — most turns produce zero memories. Only extract when there is something genuinely durable.",
-    "Each memory: ONE short sentence in third person from the rememberer's perspective (e.g. 'Aria fled the capital after a falling-out with her family').",
-    "For each memory, list which other character(s) it is about (using their ids from the roster, or NONE), and whether it is meaningfully tied to the current location (YES or NO).",
+    "Each memory: ONE short sentence in third person from the rememberer's perspective.",
+    "When referring to ANY character (including the rememberer themselves) inside the memory text, ALWAYS use the placeholder syntax `[char:<id>]` with the character's id from the roster — never their bare name. Example: '[char:c1] fled the capital after a falling-out with her family'.",
+    "For each memory, also list which other character(s) it is about (using their ids from the roster, or NONE), and whether it is meaningfully tied to the current location (YES or NO).",
     "Output strictly in this format, one memory per line, no preamble:",
-    "1. <memory> | characters: <ids or NONE> | location: <YES or NO>",
+    "1. <memory using [char:<id>] placeholders> | characters: <ids or NONE> | location: <YES or NO>",
     "If there is nothing worth remembering long-term, output exactly: NONE",
   ].join("\n")
 
   const prompt = [
     `## Speaker (rememberer): ${speaker.name} (id: ${speaker.id})`,
     `## Location: ${locationName}`,
-    `## Other characters present`,
+    `## Roster (use these ids inside [char:<id>] placeholders)`,
     roster,
     `## Recent turn(s)`,
     transcript,
-    `Now extract memories.`,
+    `Now extract memories. Reference characters via [char:<id>] inside the memory text.`,
   ].join("\n\n")
 
   const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return parseExtractedMemories(raw, others)
+  return parseExtractedMemories(raw, others, context.characters)
+}
+
+export interface NameLearning {
+  knowerId: string
+  knownId: string
+}
+
+const NAME_LINE_REGEX =
+  /^\s*\d+\s*[\.\)]\s*([^\s|,]+)\s*(?:->|→|=>|learned|now knows|knows)\s*([^\s|,]+)/i
+
+export function parseNameLearnings(
+  raw: string,
+  candidates: Character[],
+): NameLearning[] {
+  const ids = new Set(candidates.map((c) => c.id))
+  const out: NameLearning[] = []
+  const seen = new Set<string>()
+  for (const line of raw.split(/\r?\n/)) {
+    if (/^\s*none\s*$/i.test(line)) return []
+    const m = NAME_LINE_REGEX.exec(line)
+    if (!m) continue
+    const knowerId = m[1].trim()
+    const knownId = m[2].trim()
+    if (!ids.has(knowerId) || !ids.has(knownId)) continue
+    if (knowerId === knownId) continue
+    const key = `${knowerId}->${knownId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ knowerId, knownId })
+  }
+  return out
+}
+
+/**
+ * After a turn, asks the LLM which present characters newly learned the name
+ * of which other present characters. Used to update acquaintance state.
+ */
+export async function extractNameLearningsFromTurn(args: {
+  backend: LLMBackend
+  context: SceneContext
+  recentMessages: Message[]
+  unknownPairs: Array<{ knowerId: string; knownId: string }>
+  signal?: AbortSignal
+}): Promise<NameLearning[]> {
+  const { backend, context, recentMessages, unknownPairs } = args
+  if (recentMessages.length === 0 || unknownPairs.length === 0) return []
+
+  const characterById = new Map(context.characters.map((c) => [c.id, c]))
+  const roster = context.characters
+    .map((c) => `- ${c.name} (id: ${c.id})`)
+    .join("\n")
+  const pairList = unknownPairs
+    .map((p) => {
+      const knower = characterById.get(p.knowerId)
+      const known = characterById.get(p.knownId)
+      if (!knower || !known) return null
+      return `- ${knower.name} (id: ${p.knowerId}) does NOT yet know ${known.name} (id: ${p.knownId}) by name`
+    })
+    .filter((s): s is string => s != null)
+    .join("\n")
+  if (!pairList) return []
+
+  const transcript = recentMessages
+    .map((m) => {
+      if (m.speakerKind === "narrator") return `[Narrator]: ${m.content}`
+      if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
+      return `[${m.speakerName}]: ${m.content}`
+    })
+    .join("\n")
+
+  const system = [
+    "You decide which characters newly LEARNED the NAME of another character from the recent turn(s).",
+    "A name is learned only if it was actually spoken or unmistakably revealed in a way the listener heard and understood (e.g. someone introduces themselves, someone addresses another by name within earshot, a name is read off a badge or document).",
+    "Be conservative. If a name was merely mentioned in passing without context, or the speaker was not within hearing distance, or the reference is ambiguous, DO NOT mark it as learned.",
+    "Names referenced in pure narration (without a character actually saying or revealing them in-scene) do NOT count.",
+    "Output strictly one line per newly-learned name, in this exact format:",
+    "1. <knower_id> -> <known_id>",
+    "If nothing was learned, output exactly: NONE",
+  ].join("\n")
+
+  const prompt = [
+    `## Roster (all characters present)`,
+    roster,
+    `## Pairs that did NOT know each other's names before this turn`,
+    pairList,
+    `## Recent turn(s)`,
+    transcript,
+    "Which of the listed pairs are now learned? List only pairs from the list above that were actually revealed in the transcript.",
+  ].join("\n\n")
+
+  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  const candidates = context.characters
+  const all = parseNameLearnings(raw, candidates)
+  const allowed = new Set(unknownPairs.map((p) => `${p.knowerId}->${p.knownId}`))
+  return all.filter((p) => allowed.has(`${p.knowerId}->${p.knownId}`))
 }
 
 export async function requestConsent(args: {
@@ -463,16 +636,18 @@ export async function requestConsent(args: {
   target: Character
   speakerName: string
   intent: string
+  knowledge?: POVKnowledge
   signal?: AbortSignal
 }): Promise<ConsentDecision> {
   const { backend, context, messages, target, speakerName, intent } = args
 
+  const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
+  const metIds = args.knowledge?.metIds ?? new Set<string>()
   const speakerCharacter = context.characters.find((c) => c.name === speakerName)
-  const targetAliases = buildAliasMap(context.characters, target.id)
-  const speakerLabel =
-    speakerCharacter && targetAliases.has(speakerCharacter.id)
-      ? targetAliases.get(speakerCharacter.id)!
-      : speakerName
+  const targetAliases = buildAliasMap(context.characters, target.id, knownNameIds)
+  const speakerLabel = speakerCharacter
+    ? labelFor(speakerCharacter.id, speakerCharacter.name, targetAliases)
+    : speakerName
 
   const system = [
     `You are ${target.name}.`,
@@ -492,7 +667,11 @@ export async function requestConsent(args: {
     .join("\n")
 
   const prompt = [
-    baseSceneBlock(context, messages, { povCharacterId: target.id }),
+    baseSceneBlock(context, messages, {
+      povCharacterId: target.id,
+      povKnownNameIds: knownNameIds,
+      povMetIds: metIds,
+    }),
     `## Proposed action by ${speakerLabel}`,
     intent,
     "Now give your DECISION and REASON.",
@@ -516,6 +695,7 @@ export interface StreamCharacterTurnArgs {
   intent?: string
   refusals?: ConsentRefusal[]
   memories?: Memory[]
+  knowledge?: POVKnowledge
   signal?: AbortSignal
   onText: (chunk: string) => void
 }
@@ -527,10 +707,17 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       ? context.characters.find((c) => c.id === speaker.characterId) ?? null
       : null
 
-  const aliases = character != null ? buildAliasMap(context.characters, character.id) : null
+  const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
+  const metIds = args.knowledge?.metIds ?? new Set<string>()
+  const aliases =
+    character != null
+      ? buildAliasMap(context.characters, character.id, knownNameIds)
+      : null
   const otherAliases =
     character != null
-      ? context.characters.filter((c) => c.id !== character.id).map((c) => aliases!.get(c.id)!)
+      ? context.characters
+          .filter((c) => c.id !== character.id)
+          .map((c) => labelFor(c.id, c.name, aliases!))
       : []
   const labelExample =
     character != null
@@ -551,7 +738,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
 
   const refusalLines = (refusals ?? [])
     .map((r) => {
-      const alias = aliases?.get(r.characterId) ?? r.characterName
+      const alias = aliases ? labelFor(r.characterId, r.characterName, aliases) : r.characterName
       return `- ${alias} declined.`
     })
     .join("\n")
@@ -579,7 +766,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           ...otherCharactersRules,
           "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with brief actions or observations as appropriate, but only your own.",
           `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
-          "You do NOT know the names or inner thoughts of other characters unless they have revealed them through the scene. Refer to them by what you can observe.",
+          "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
       : []
 
@@ -601,9 +788,18 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
 
   const turnBlock = consentBlock ? [`# This turn`, consentBlock].join("\n") : ""
 
+  const characterById = new Map(context.characters.map((c) => [c.id, c]))
+  const resolvePOVLabel = (id: string): string => {
+    if (character && id === character.id) return character.name
+    const c = characterById.get(id)
+    if (!c) return id
+    if (knownNameIds.has(id)) return c.name
+    return c.strangerName || c.name
+  }
   const memoryLines = (memories ?? [])
-    .filter((m) => m.content.trim().length > 0)
-    .map((m) => `- ${m.content.trim()}`)
+    .map((m) => renderMemoryContent(m.content, resolvePOVLabel).trim())
+    .filter((line) => line.length > 0)
+    .map((line) => `- ${line}`)
     .join("\n")
   const memoryBlock = memoryLines
     ? [
@@ -627,7 +823,11 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const system = [
     speakerInstructions,
     "",
-    baseSceneBlock(context, null, { povCharacterId: character?.id ?? null }),
+    baseSceneBlock(context, null, {
+      povCharacterId: character?.id ?? null,
+      povKnownNameIds: knownNameIds,
+      povMetIds: metIds,
+    }),
   ].join("\n")
 
   const chatMessages: ChatMessage[] = messages.map((m) => {

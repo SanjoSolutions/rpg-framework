@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useDevSidebar } from "@/hooks/use-dev-sidebar"
+import { useSettings } from "@/hooks/use-settings"
 
 export function DevSidebar() {
   const {
@@ -14,6 +15,7 @@ export function DevSidebar() {
     collapsed,
     toggleCollapsed,
   } = useDevSidebar()
+  const { memoriesEnabled } = useSettings()
 
   if (collapsed) {
     return (
@@ -50,13 +52,17 @@ export function DevSidebar() {
       <p className="mt-2 text-xs text-muted-foreground">
         Display LLM output exactly as received, without any post-processing.
       </p>
-      <label className="mt-4 flex items-center justify-between gap-3">
-        <span>Show memories</span>
-        <Switch checked={showMemories} onCheckedChange={toggleShowMemories} />
-      </label>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Display each character&apos;s scene-relevant memories above the transcript.
-      </p>
+      {memoriesEnabled && (
+        <>
+          <label className="mt-4 flex items-center justify-between gap-3">
+            <span>Show memories</span>
+            <Switch checked={showMemories} onCheckedChange={toggleShowMemories} />
+          </label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Display each character&apos;s scene-relevant memories above the transcript.
+          </p>
+        </>
+      )}
     </aside>
   )
 }

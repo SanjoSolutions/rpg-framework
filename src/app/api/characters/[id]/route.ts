@@ -9,6 +9,7 @@ const characterSchema = z.object({
   appearance: z.string().max(4000).optional(),
   personality: z.string().max(8000).optional(),
   voice: z.string().max(120).nullable().optional(),
+  strangerName: z.string().max(120).nullable().optional(),
 })
 
 export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {

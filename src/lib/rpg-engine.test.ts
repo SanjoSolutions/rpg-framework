@@ -21,13 +21,14 @@ const baseScenario: Scenario = {
   updatedAt: 0,
 }
 
-function makeCharacter(id: string, name: string): Character {
+function makeCharacter(id: string, name: string, strangerName?: string): Character {
   return {
     id,
     name,
     appearance: "",
     personality: "",
     voice: null,
+    strangerName: strangerName ?? `Stranger ${id.toUpperCase()}`,
     createdAt: 0,
     updatedAt: 0,
   }
@@ -118,14 +119,23 @@ describe("parseSpeakerCandidates", () => {
 })
 
 describe("buildAliasMap", () => {
-  it("aliases every character except the POV", () => {
-    const aria = makeCharacter("c1", "Aria")
-    const jenny = makeCharacter("c2", "Jenny")
-    const rex = makeCharacter("c3", "Rex")
+  it("aliases non-POV strangers using their persistent strangerName", () => {
+    const aria = makeCharacter("c1", "Aria", "The Bard")
+    const jenny = makeCharacter("c2", "Jenny", "The Tavern Girl")
+    const rex = makeCharacter("c3", "Rex", "The Stranger in Black")
     const aliases = buildAliasMap([aria, jenny, rex], "c2")
     expect(aliases.has("c2")).toBe(false)
-    expect(aliases.get("c1")).toBe("Stranger 1")
-    expect(aliases.get("c3")).toBe("Stranger 2")
+    expect(aliases.get("c1")).toBe("The Bard")
+    expect(aliases.get("c3")).toBe("The Stranger in Black")
+  })
+
+  it("uses real name for characters whose name the POV knows", () => {
+    const aria = makeCharacter("c1", "Aria", "The Bard")
+    const jenny = makeCharacter("c2", "Jenny", "The Tavern Girl")
+    const rex = makeCharacter("c3", "Rex", "The Stranger in Black")
+    const aliases = buildAliasMap([aria, jenny, rex], "c2", new Set(["c1"]))
+    expect(aliases.has("c1")).toBe(false)
+    expect(aliases.get("c3")).toBe("The Stranger in Black")
   })
 })
 
@@ -209,7 +219,7 @@ describe("parseExtractedMemories", () => {
   const jenny = makeCharacter("c2", "Jenny")
   const candidates = [aria, jenny]
 
-  it("parses a typical multi-line response", () => {
+  it("parses a typical multi-line response and normalizes name references", () => {
     const raw = [
       "1. Aria revealed she fled the capital | characters: c1 | location: NO",
       "2. The tavern was unusually quiet tonight | characters: NONE | location: YES",
@@ -217,10 +227,26 @@ describe("parseExtractedMemories", () => {
     ].join("\n")
     const out = parseExtractedMemories(raw, candidates)
     expect(out).toEqual([
-      { content: "Aria revealed she fled the capital", characterIds: ["c1"], locationRelevant: false },
+      {
+        content: "[char:c1] revealed she fled the capital",
+        characterIds: ["c1"],
+        locationRelevant: false,
+      },
       { content: "The tavern was unusually quiet tonight", characterIds: [], locationRelevant: true },
       {
-        content: "Jenny and Aria seem to know each other",
+        content: "[char:c2] and [char:c1] seem to know each other",
+        characterIds: ["c1", "c2"],
+        locationRelevant: false,
+      },
+    ])
+  })
+
+  it("collects character ids referenced inline via [char:UUID] placeholders", () => {
+    const raw = "1. [char:c1] kissed [char:c2] in secret | characters: NONE | location: NO"
+    const out = parseExtractedMemories(raw, candidates)
+    expect(out).toEqual([
+      {
+        content: "[char:c1] kissed [char:c2] in secret",
         characterIds: ["c1", "c2"],
         locationRelevant: false,
       },

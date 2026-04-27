@@ -1,7 +1,18 @@
 import { type NextRequest } from "next/server"
+import {
+  getKnowledgeForCharacters,
+  markKnowsName,
+  recordMutualMeetings,
+  type KnowledgeView,
+} from "@/lib/acquaintances"
 import { getCharacter } from "@/lib/characters"
 import { getLocation } from "@/lib/locations"
-import { addMemory, listMemoriesForScene, type Memory } from "@/lib/memories"
+import {
+  addMemory,
+  listMemoriesForScene,
+  renderMemoryContent,
+  type Memory,
+} from "@/lib/memories"
 import {
   appendMessage,
   listMessages,
@@ -11,11 +22,13 @@ import {
 } from "@/lib/messages"
 import {
   extractMemoriesFromTurn,
+  extractNameLearningsFromTurn,
   pickNextSpeaker,
   proposeIntent,
   requestConsent,
   streamCharacterTurn,
   type ConsentRefusal,
+  type POVKnowledge,
   type PreviousAttempt,
   type SceneContext,
 } from "@/lib/rpg-engine"
@@ -51,6 +64,20 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const backend: LLMBackend = settings.useLocalLlm ? "nemomix-local" : "grok"
   const requireConsent = settings.requireConsent
   const memoriesEnabled = settings.memoriesEnabled
+
+  // Record that all present characters have now met each other (idempotent).
+  recordMutualMeetings(characters.map((c) => c.id))
+
+  let knowledgeMap: Map<string, KnowledgeView> = getKnowledgeForCharacters(
+    characters.map((c) => c.id),
+  )
+  const knowledgeFor = (characterId: string): POVKnowledge => {
+    const view = knowledgeMap.get(characterId)
+    return {
+      knownNameIds: view?.knownNameIds ?? new Set<string>(),
+      metIds: view?.metIds ?? new Set<string>(),
+    }
+  }
 
   const speaker = await pickNextSpeaker({
     backend,
@@ -94,6 +121,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           intent: args.intent,
           refusals: args.refusals,
           memories: args.memories,
+          knowledge: args.speakerId ? knowledgeFor(args.speakerId) : undefined,
           signal: request.signal,
           onText: (chunk) => {
             buffered += chunk
@@ -150,6 +178,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 context,
                 messages,
                 speaker: speakerCharacter,
+                knowledge: knowledgeFor(speakerCharacter.id),
                 previousAttempts,
                 signal: request.signal,
               })
@@ -192,6 +221,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   target,
                   speakerName: speaker.name,
                   intent: proposal.intent,
+                  knowledge: knowledgeFor(target.id),
                   signal: request.signal,
                 })
                 send("consent_response", { ...decision, attempt })
@@ -262,10 +292,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   locationId: m.locationRelevant ? scenario.locationId : null,
                   associatedCharacterIds: m.characterIds,
                 })
+                const resolveName = (id: string) =>
+                  characters.find((c) => c.id === id)?.name ?? id
                 send("memory_learned", {
                   id: stored.id,
                   ownerCharacterId: stored.ownerCharacterId,
-                  content: stored.content,
+                  content: renderMemoryContent(stored.content, resolveName),
+                  rawContent: stored.content,
                   locationId: stored.locationId,
                   associatedCharacterIds: stored.associatedCharacterIds,
                 })
@@ -274,6 +307,50 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               logger.warn(
                 { err: err instanceof Error ? err.message : String(err) },
                 "memory extraction failed",
+              )
+            }
+          }
+        }
+
+        if (speaker.kind === "character" && characters.length >= 2) {
+          const unknownPairs: Array<{ knowerId: string; knownId: string }> = []
+          for (const knower of characters) {
+            const view = knowledgeMap.get(knower.id)
+            for (const known of characters) {
+              if (knower.id === known.id) continue
+              if (view?.knownNameIds.has(known.id)) continue
+              unknownPairs.push({ knowerId: knower.id, knownId: known.id })
+            }
+          }
+          if (unknownPairs.length > 0) {
+            try {
+              const recent = messages.slice(-4)
+              const learnings = await extractNameLearningsFromTurn({
+                backend,
+                context,
+                recentMessages: recent,
+                unknownPairs,
+                signal: request.signal,
+              })
+              for (const l of learnings) {
+                const changed = markKnowsName(l.knowerId, l.knownId)
+                if (!changed) continue
+                const knower = characters.find((c) => c.id === l.knowerId)
+                const known = characters.find((c) => c.id === l.knownId)
+                send("name_learned", {
+                  knowerId: l.knowerId,
+                  knownId: l.knownId,
+                  knowerName: knower?.name ?? null,
+                  knownName: known?.name ?? null,
+                })
+              }
+              if (learnings.length > 0) {
+                knowledgeMap = getKnowledgeForCharacters(characters.map((c) => c.id))
+              }
+            } catch (err) {
+              logger.warn(
+                { err: err instanceof Error ? err.message : String(err) },
+                "name-learning extraction failed",
               )
             }
           }

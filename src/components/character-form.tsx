@@ -20,6 +20,7 @@ export function CharacterForm({ mode, character }: Props) {
   const [appearance, setAppearance] = useState(character?.appearance ?? "")
   const [personality, setPersonality] = useState(character?.personality ?? "")
   const [voice, setVoice] = useState(character?.voice ?? "")
+  const [strangerName, setStrangerName] = useState(character?.strangerName ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -40,6 +41,7 @@ export function CharacterForm({ mode, character }: Props) {
         appearance,
         personality,
         voice: voice.trim() || null,
+        strangerName: strangerName.trim() || null,
       })
       const url = mode === "create" ? "/api/characters" : `/api/characters/${character!.id}`
       const method = mode === "create" ? "POST" : "PUT"
@@ -137,6 +139,20 @@ export function CharacterForm({ mode, character }: Props) {
           rows={6}
           placeholder="Mannerisms, voice, mood, motivations…"
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="strangerName">Stranger name</Label>
+        <Input
+          id="strangerName"
+          value={strangerName}
+          onChange={(e) => setStrangerName(e.target.value)}
+          placeholder={mode === "create" ? "Auto-generated (e.g. Stranger 7)" : ""}
+          maxLength={120}
+        />
+        <p className="text-xs text-muted-foreground">
+          How others refer to this character before learning their name. Globally unique;
+          stays the same across all scenes.
+        </p>
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">

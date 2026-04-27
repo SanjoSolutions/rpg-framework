@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useSettings } from "@/hooks/use-settings"
 
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/characters", label: "Characters" },
@@ -14,6 +15,10 @@ const NAV_ITEMS: { href: string; label: string }[] = [
 
 export function Navbar() {
   const pathname = usePathname()
+  const { memoriesEnabled } = useSettings()
+  const items = NAV_ITEMS.filter(
+    (item) => item.href !== "/memories" || memoriesEnabled,
+  )
   return (
     <header className="border-b border-border">
       <div className="flex items-center gap-6 px-6 py-3">
@@ -21,7 +26,7 @@ export function Navbar() {
           RPG Framework
         </Link>
         <nav className="flex items-center gap-4 text-sm">
-          {NAV_ITEMS.map((item) => {
+          {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
             return (
               <Link

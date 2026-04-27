@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { getDb } from "./db"
 
+export {
+  extractReferencedCharacterIds,
+  normalizeMemoryReferences,
+  renderMemoryContent,
+} from "./memory-text"
+
 export interface Memory {
   id: string
   ownerCharacterId: string

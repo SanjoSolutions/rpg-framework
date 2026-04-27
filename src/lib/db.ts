@@ -25,6 +25,7 @@ function applySchema(db: Database.Database): void {
       appearance TEXT NOT NULL DEFAULT '',
       personality TEXT NOT NULL DEFAULT '',
       voice TEXT,
+      stranger_name TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -97,6 +98,21 @@ function applySchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(owner_character_id);
     CREATE INDEX IF NOT EXISTS idx_memories_location ON memories(location_id);
     CREATE INDEX IF NOT EXISTS idx_memory_characters_character ON memory_characters(character_id);
+
+    CREATE TABLE IF NOT EXISTS character_acquaintances (
+      knower_id TEXT NOT NULL,
+      known_id TEXT NOT NULL,
+      knows_name INTEGER NOT NULL DEFAULT 0,
+      met_at INTEGER NOT NULL,
+      name_learned_at INTEGER,
+      PRIMARY KEY (knower_id, known_id),
+      FOREIGN KEY (knower_id) REFERENCES characters(id) ON DELETE CASCADE,
+      FOREIGN KEY (known_id) REFERENCES characters(id) ON DELETE CASCADE,
+      CHECK (knower_id <> known_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_acq_knower ON character_acquaintances(knower_id);
+    CREATE INDEX IF NOT EXISTS idx_acq_known ON character_acquaintances(known_id);
   `)
 
   const characterColumns = db
@@ -105,5 +121,34 @@ function applySchema(db: Database.Database): void {
   const columnNames = new Set(characterColumns.map((c) => c.name))
   if (columnNames.has("description") && !columnNames.has("appearance")) {
     db.exec("ALTER TABLE characters RENAME COLUMN description TO appearance")
+  }
+  if (!columnNames.has("stranger_name")) {
+    db.exec("ALTER TABLE characters ADD COLUMN stranger_name TEXT NOT NULL DEFAULT ''")
+  }
+
+  // Backfill empty stranger_name values with unique "Stranger N" labels.
+  const missing = db
+    .prepare(
+      "SELECT id FROM characters WHERE stranger_name = '' ORDER BY created_at",
+    )
+    .all() as { id: string }[]
+  if (missing.length > 0) {
+    const usedRow = db
+      .prepare(
+        `SELECT MAX(CAST(SUBSTR(stranger_name, 10) AS INTEGER)) AS max_n
+           FROM characters
+          WHERE stranger_name LIKE 'Stranger %'
+            AND SUBSTR(stranger_name, 10) GLOB '[0-9]*'`,
+      )
+      .get() as { max_n: number | null }
+    let next = (usedRow?.max_n ?? 0) + 1
+    const update = db.prepare("UPDATE characters SET stranger_name = ? WHERE id = ?")
+    const tx = db.transaction(() => {
+      for (const row of missing) {
+        update.run(`Stranger ${next}`, row.id)
+        next += 1
+      }
+    })
+    tx()
   }
 }

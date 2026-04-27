@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { addMemory, listAllMemories, listMemoriesForOwner } from "@/lib/memories"
+import { listCharacters } from "@/lib/characters"
+import {
+  addMemory,
+  listAllMemories,
+  listMemoriesForOwner,
+  normalizeMemoryReferences,
+} from "@/lib/memories"
 
 export const runtime = "nodejs"
 
@@ -23,6 +29,11 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
-  const memory = addMemory(parsed.data)
+  const characters = listCharacters()
+  const normalized = {
+    ...parsed.data,
+    content: normalizeMemoryReferences(parsed.data.content, characters),
+  }
+  const memory = addMemory(normalized)
   return NextResponse.json({ memory }, { status: 201 })
 }
