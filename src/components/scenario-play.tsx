@@ -771,17 +771,41 @@ function pickBrowserVoice(gender: Gender): SpeechSynthesisVoice | null {
   return pool.find((v) => voiceMatchesGender(v, gender)) ?? null
 }
 
+// Browsers (notably Chrome) return [] from speechSynthesis.getVoices() until
+// the voiceschanged event fires. Resolve once per speaker so the first
+// sentence doesn't fall through to the default voice.
+function resolveBrowserVoice(gender: Gender): Promise<SpeechSynthesisVoice | null> {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return Promise.resolve(null)
+  }
+  const synth = window.speechSynthesis
+  const immediate = pickBrowserVoice(gender)
+  if (immediate) return Promise.resolve(immediate)
+  if (synth.getVoices().length > 0) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const finish = () => {
+      synth.removeEventListener("voiceschanged", finish)
+      clearTimeout(timer)
+      resolve(pickBrowserVoice(gender))
+    }
+    synth.addEventListener("voiceschanged", finish)
+    const timer = setTimeout(finish, 1000)
+  })
+}
+
 class SentenceSpeaker {
   private spokenChars = 0
   private buffer = ""
   private firstEmitted = false
   private gender: Gender | null
+  private voicePromise: Promise<SpeechSynthesisVoice | null>
 
   constructor(
     private prefix = "",
     grokVoice = "",
   ) {
     this.gender = GROK_VOICE_GENDER[grokVoice.toLowerCase()] ?? null
+    this.voicePromise = this.gender ? resolveBrowserVoice(this.gender) : Promise.resolve(null)
   }
 
   push(fullText: string): void {
@@ -811,11 +835,10 @@ class SentenceSpeaker {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return
     const out = !this.firstEmitted && this.prefix ? `${this.prefix}: ${text}` : text
     this.firstEmitted = true
-    const utterance = new SpeechSynthesisUtterance(out)
-    if (this.gender) {
-      const matched = pickBrowserVoice(this.gender)
-      if (matched) utterance.voice = matched
-    }
-    window.speechSynthesis.speak(utterance)
+    void this.voicePromise.then((voice) => {
+      const utterance = new SpeechSynthesisUtterance(out)
+      if (voice) utterance.voice = voice
+      window.speechSynthesis.speak(utterance)
+    })
   }
 }
