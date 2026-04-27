@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useDevSidebar } from "@/hooks/use-dev-sidebar"
 import { useSettings } from "@/hooks/use-settings"
+import type { Character } from "@/lib/characters"
 import type { Message } from "@/lib/messages"
 
 interface SpeakerInfo {
@@ -21,10 +22,10 @@ interface PendingTurn extends SpeakerInfo {
 interface Props {
   scenarioId: string
   initialMessages: Message[]
-  hasCharacters: boolean
+  characters: Character[]
 }
 
-export function ScenarioPlay({ scenarioId, initialMessages, hasCharacters }: Props) {
+export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props) {
   const { voiceEnabled, setVoiceEnabled } = useSettings()
   const { showRawMessages } = useDevSidebar()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
@@ -32,8 +33,26 @@ export function ScenarioPlay({ scenarioId, initialMessages, hasCharacters }: Pro
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const hasCharacters = characters.length > 0
+
+  useEffect(() => {
+    fetch("/api/tts/health")
+      .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : { available: false }))
+      .then((d) => setServerTtsAvailable(d.available))
+      .catch(() => setServerTtsAvailable(false))
+  }, [])
+
+  function speakerPrefix(characterId: string | null): string {
+    if (!characterId) return ""
+    const character = characters.find((c) => c.id === characterId)
+    if (!character?.voice) return ""
+    const collides = characters.some((other) => other.id !== character.id && other.voice === character.voice)
+    return collides ? character.name : ""
+  }
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
@@ -89,18 +108,42 @@ export function ScenarioPlay({ scenarioId, initialMessages, hasCharacters }: Pro
             const p = payload as SpeakerInfo
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
             setPendingTurn(speaker)
+            sentenceSpeakerRef.current = null
+            if (
+              voiceEnabled &&
+              serverTtsAvailable === false &&
+              p.kind === "character" &&
+              p.characterId
+            ) {
+              const character = characters.find((c) => c.id === p.characterId)
+              if (character?.voice) {
+                sentenceSpeakerRef.current = new SentenceSpeaker(speakerPrefix(p.characterId))
+              }
+            }
           } else if (event === "delta" && speaker) {
             const delta = (payload as { content: string }).content
             const current: PendingTurn = speaker
             const next: PendingTurn = { ...current, content: current.content + delta }
             speaker = next
             setPendingTurn(next)
+            sentenceSpeakerRef.current?.push(next.content)
           } else if (event === "message") {
             const message = payload as Message
             setMessages((current) => [...current, message])
             setPendingTurn(null)
-            if (voiceEnabled && message.speakerKind === "character") {
-              playVoice(message.speakerId, message.content).catch(() => {})
+            if (sentenceSpeakerRef.current) {
+              sentenceSpeakerRef.current.flush()
+              sentenceSpeakerRef.current = null
+            } else if (voiceEnabled && message.speakerKind === "character") {
+              const character = characters.find((c) => c.id === message.speakerId)
+              if (character?.voice) {
+                playVoice({
+                  voice: character.voice,
+                  text: message.content,
+                  prefix: speakerPrefix(message.speakerId),
+                  onServerFailure: () => setServerTtsAvailable(false),
+                }).catch(() => {})
+              }
             }
           } else if (event === "error") {
             setError((payload as { message: string }).message)
@@ -150,6 +193,10 @@ export function ScenarioPlay({ scenarioId, initialMessages, hasCharacters }: Pro
     abortRef.current = null
     setBusy(false)
     setPendingTurn(null)
+    sentenceSpeakerRef.current = null
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel()
+    }
   }
 
   async function clearTranscript() {
@@ -248,14 +295,70 @@ function MessageBubble({ message, showRaw }: { message: Message; showRaw: boolea
   )
 }
 
-async function playVoice(characterId: string | null, text: string): Promise<void> {
-  if (!characterId) return
-  const charRes = await fetch(`/api/characters/${characterId}`)
-  if (!charRes.ok) return
-  const data = (await charRes.json()) as { character: { voice: string | null } }
-  const voice = data.character.voice
-  if (!voice) return
-  const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(text)}`
+interface PlayVoiceArgs {
+  voice: string
+  text: string
+  prefix: string
+  onServerFailure: () => void
+}
+
+async function playVoice(args: PlayVoiceArgs): Promise<void> {
+  const { voice, text, prefix, onServerFailure } = args
+  const spoken = prefix ? `${prefix}: ${text}` : text
+  const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(spoken)}`
   const audio = new Audio(url)
-  await audio.play().catch(() => {})
+  let fellBack = false
+  const fallback = () => {
+    if (fellBack) return
+    fellBack = true
+    onServerFailure()
+    const speaker = new SentenceSpeaker(prefix)
+    speaker.push(text)
+    speaker.flush()
+  }
+  audio.addEventListener("error", fallback, { once: true })
+  try {
+    await audio.play()
+    audio.removeEventListener("error", fallback)
+  } catch {
+    fallback()
+  }
+}
+
+class SentenceSpeaker {
+  private spokenChars = 0
+  private buffer = ""
+  private firstEmitted = false
+
+  constructor(private prefix = "") {}
+
+  push(fullText: string): void {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return
+    if (fullText.length <= this.spokenChars) return
+    this.buffer += fullText.slice(this.spokenChars)
+    this.spokenChars = fullText.length
+    const matcher = /[.!?…]+["')\]]?\s+/g
+    let cursor = 0
+    let match: RegExpExecArray | null
+    while ((match = matcher.exec(this.buffer)) !== null) {
+      const end = match.index + match[0].length
+      const sentence = this.buffer.slice(cursor, end).trim()
+      if (sentence) this.emit(sentence)
+      cursor = end
+    }
+    this.buffer = this.buffer.slice(cursor)
+  }
+
+  flush(): void {
+    const trailing = this.buffer.trim()
+    this.buffer = ""
+    if (trailing) this.emit(trailing)
+  }
+
+  private emit(text: string): void {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return
+    const out = !this.firstEmitted && this.prefix ? `${this.prefix}: ${text}` : text
+    this.firstEmitted = true
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(out))
+  }
 }

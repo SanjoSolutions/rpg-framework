@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { pickNextSpeaker } from "./rpg-engine"
 import type { Character } from "./characters"
+import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
 
 const baseScenario: Scenario = {
@@ -47,5 +48,29 @@ describe("pickNextSpeaker", () => {
       messages: [],
     })
     expect(speaker).toEqual({ kind: "character", characterId: "c1", name: "Aria" })
+  })
+
+  it("excludes the most recent character speaker, picking the other when only two characters", async () => {
+    const vixxen = makeCharacter("c1", "Vixxen")
+    const jenny = makeCharacter("c2", "Jenny")
+    const lastTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "character",
+      speakerId: vixxen.id,
+      speakerName: vixxen.name,
+      content: "Hi.",
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [vixxen.id, jenny.id] },
+        location: null,
+        characters: [vixxen, jenny],
+      },
+      messages: [lastTurn],
+    })
+    expect(speaker).toEqual({ kind: "character", characterId: "c2", name: "Jenny" })
   })
 })

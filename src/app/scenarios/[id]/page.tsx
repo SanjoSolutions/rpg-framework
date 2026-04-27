@@ -43,7 +43,7 @@ export default async function PlayScenarioPage({
       <ScenarioPlay
         scenarioId={scenario.id}
         initialMessages={messages}
-        hasCharacters={characters.length > 0}
+        characters={characters}
       />
     </div>
   )

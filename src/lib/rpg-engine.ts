@@ -76,7 +76,17 @@ export async function pickNextSpeaker(args: {
     return { kind: "character", characterId: only.id, name: only.name }
   }
 
-  const roster = context.characters.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
+  const lastCharacterMessage = [...messages].reverse().find((m) => m.speakerKind === "character")
+  const eligible = lastCharacterMessage
+    ? context.characters.filter((c) => c.id !== lastCharacterMessage.speakerId)
+    : context.characters
+
+  if (eligible.length === 1) {
+    const only = eligible[0]
+    return { kind: "character", characterId: only.id, name: only.name }
+  }
+
+  const roster = eligible.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
 
   const system = [
     "You are the director of a collaborative roleplay scene.",
@@ -99,13 +109,13 @@ export async function pickNextSpeaker(args: {
   })
 
   const cleaned = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").trim()
-  const match = context.characters.find((c) => c.id === cleaned)
+  const match = eligible.find((c) => c.id === cleaned)
   if (match) return { kind: "character", characterId: match.id, name: match.name }
 
-  const fallback = context.characters.find((c) => cleaned.toLowerCase().includes(c.name.toLowerCase()))
+  const fallback = eligible.find((c) => cleaned.toLowerCase().includes(c.name.toLowerCase()))
   if (fallback) return { kind: "character", characterId: fallback.id, name: fallback.name }
 
-  const first = context.characters[0]
+  const first = eligible[0]
   return { kind: "character", characterId: first.id, name: first.name }
 }
 
