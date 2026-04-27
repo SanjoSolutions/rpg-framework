@@ -6,7 +6,14 @@ import { Switch } from "@/components/ui/switch"
 import { useDevSidebar } from "@/hooks/use-dev-sidebar"
 
 export function DevSidebar() {
-  const { showRawMessages, toggleShowRawMessages, collapsed, toggleCollapsed } = useDevSidebar()
+  const {
+    showRawMessages,
+    toggleShowRawMessages,
+    showMemories,
+    toggleShowMemories,
+    collapsed,
+    toggleCollapsed,
+  } = useDevSidebar()
 
   if (collapsed) {
     return (
@@ -42,6 +49,13 @@ export function DevSidebar() {
       </label>
       <p className="mt-2 text-xs text-muted-foreground">
         Display LLM output exactly as received, without any post-processing.
+      </p>
+      <label className="mt-4 flex items-center justify-between gap-3">
+        <span>Show memories</span>
+        <Switch checked={showMemories} onCheckedChange={toggleShowMemories} />
+      </label>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Display each character&apos;s scene-relevant memories above the transcript.
       </p>
     </aside>
   )

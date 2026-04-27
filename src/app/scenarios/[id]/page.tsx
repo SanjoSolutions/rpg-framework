@@ -4,7 +4,7 @@ import { ScenarioPlay } from "@/components/scenario-play"
 import { Button } from "@/components/ui/button"
 import { getCharacter } from "@/lib/characters"
 import { getLocation } from "@/lib/locations"
-import { listMessages } from "@/lib/messages"
+import { listMessageMetaForScenario, listMessages } from "@/lib/messages"
 import { getScenario } from "@/lib/scenarios"
 
 export const dynamic = "force-dynamic"
@@ -23,6 +23,7 @@ export default async function PlayScenarioPage({
     .map((cid) => getCharacter(cid))
     .filter((c): c is NonNullable<typeof c> => c != null)
   const messages = listMessages(scenario.id)
+  const messageMeta = listMessageMetaForScenario(scenario.id)
 
   return (
     <div className="mx-auto max-w-4xl h-full flex flex-col">
@@ -43,6 +44,7 @@ export default async function PlayScenarioPage({
       <ScenarioPlay
         scenarioId={scenario.id}
         initialMessages={messages}
+        initialMessageMeta={messageMeta}
         characters={characters}
       />
     </div>

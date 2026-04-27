@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useSyncExternalStore, type Reac
 
 const RAW_KEY = "rpg-show-raw-messages"
 const COLLAPSED_KEY = "rpg-dev-sidebar-collapsed"
+const MEMORIES_KEY = "rpg-show-memories"
 
 const listeners = new Set<() => void>()
 function subscribe(listener: () => void) {
@@ -36,9 +37,15 @@ function readCollapsed() {
   return readBool(COLLAPSED_KEY)
 }
 
+function readMemories() {
+  return readBool(MEMORIES_KEY)
+}
+
 interface DevSidebarState {
   showRawMessages: boolean
   toggleShowRawMessages: () => void
+  showMemories: boolean
+  toggleShowMemories: () => void
   collapsed: boolean
   toggleCollapsed: () => void
 }
@@ -57,14 +64,23 @@ function toggle(key: string) {
 
 export function DevSidebarProvider({ children }: { children: ReactNode }) {
   const showRawMessages = useSyncExternalStore(subscribe, readRaw, readBoolServer)
+  const showMemories = useSyncExternalStore(subscribe, readMemories, readBoolServer)
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, readBoolServer)
 
   const toggleShowRawMessages = useCallback(() => toggle(RAW_KEY), [])
+  const toggleShowMemories = useCallback(() => toggle(MEMORIES_KEY), [])
   const toggleCollapsed = useCallback(() => toggle(COLLAPSED_KEY), [])
 
   return (
     <DevSidebarContext.Provider
-      value={{ showRawMessages, toggleShowRawMessages, collapsed, toggleCollapsed }}
+      value={{
+        showRawMessages,
+        toggleShowRawMessages,
+        showMemories,
+        toggleShowMemories,
+        collapsed,
+        toggleCollapsed,
+      }}
     >
       {children}
     </DevSidebarContext.Provider>

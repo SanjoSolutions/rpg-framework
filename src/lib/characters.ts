@@ -4,7 +4,7 @@ import { getDb } from "./db"
 export interface Character {
   id: string
   name: string
-  description: string
+  appearance: string
   personality: string
   voice: string | null
   createdAt: number
@@ -14,7 +14,7 @@ export interface Character {
 interface Row {
   id: string
   name: string
-  description: string
+  appearance: string
   personality: string
   voice: string | null
   created_at: number
@@ -25,7 +25,7 @@ function rowToCharacter(row: Row): Character {
   return {
     id: row.id,
     name: row.name,
-    description: row.description,
+    appearance: row.appearance,
     personality: row.personality,
     voice: row.voice,
     createdAt: row.created_at,
@@ -47,7 +47,7 @@ export function getCharacter(id: string): Character | null {
 
 export interface CharacterInput {
   name: string
-  description?: string
+  appearance?: string
   personality?: string
   voice?: string | null
 }
@@ -57,7 +57,7 @@ export function createCharacter(input: CharacterInput): Character {
   const character: Character = {
     id: randomUUID(),
     name: input.name.trim(),
-    description: (input.description ?? "").trim(),
+    appearance: (input.appearance ?? "").trim(),
     personality: (input.personality ?? "").trim(),
     voice: input.voice?.trim() ? input.voice.trim() : null,
     createdAt: now,
@@ -65,12 +65,12 @@ export function createCharacter(input: CharacterInput): Character {
   }
   getDb()
     .prepare(
-      "INSERT INTO characters (id, name, description, personality, voice, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO characters (id, name, appearance, personality, voice, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       character.id,
       character.name,
-      character.description,
+      character.appearance,
       character.personality,
       character.voice,
       character.createdAt,
@@ -85,16 +85,16 @@ export function updateCharacter(id: string, input: CharacterInput): Character | 
   const updated: Character = {
     ...existing,
     name: input.name.trim(),
-    description: (input.description ?? "").trim(),
+    appearance: (input.appearance ?? "").trim(),
     personality: (input.personality ?? "").trim(),
     voice: input.voice?.trim() ? input.voice.trim() : null,
     updatedAt: Date.now(),
   }
   getDb()
     .prepare(
-      "UPDATE characters SET name = ?, description = ?, personality = ?, voice = ?, updated_at = ? WHERE id = ?",
+      "UPDATE characters SET name = ?, appearance = ?, personality = ?, voice = ?, updated_at = ? WHERE id = ?",
     )
-    .run(updated.name, updated.description, updated.personality, updated.voice, updated.updatedAt, id)
+    .run(updated.name, updated.appearance, updated.personality, updated.voice, updated.updatedAt, id)
   return updated
 }
 

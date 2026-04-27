@@ -17,18 +17,18 @@ interface Props {
 export function CharacterForm({ mode, character }: Props) {
   const router = useRouter()
   const [name, setName] = useState(character?.name ?? "")
-  const [description, setDescription] = useState(character?.description ?? "")
+  const [appearance, setAppearance] = useState(character?.appearance ?? "")
   const [personality, setPersonality] = useState(character?.personality ?? "")
   const [voice, setVoice] = useState(character?.voice ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const nameRef = useRef<HTMLInputElement>(null)
-  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const appearanceRef = useRef<HTMLTextAreaElement>(null)
   const personalityRef = useRef<HTMLTextAreaElement>(null)
   const voiceRef = useRef<HTMLInputElement>(null)
 
-  const getEntity = () => ({ name, description, personality, voice })
+  const getEntity = () => ({ name, appearance, personality, voice })
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -37,7 +37,7 @@ export function CharacterForm({ mode, character }: Props) {
     try {
       const body = JSON.stringify({
         name,
-        description,
+        appearance,
         personality,
         voice: voice.trim() || null,
       })
@@ -100,22 +100,22 @@ export function CharacterForm({ mode, character }: Props) {
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="description">Description</Label>
+          <Label htmlFor="appearance">Appearance</Label>
           <AssistButton
             entityType="character"
-            field="description"
-            fieldLabel="Description"
+            field="appearance"
+            fieldLabel="Appearance"
             getEntity={getEntity}
-            targetRef={descriptionRef}
+            targetRef={appearanceRef}
           />
         </div>
         <Textarea
-          id="description"
-          ref={descriptionRef}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          id="appearance"
+          ref={appearanceRef}
+          value={appearance}
+          onChange={(e) => setAppearance(e.target.value)}
           rows={4}
-          placeholder="Appearance, role, history…"
+          placeholder="What others see at a glance: physical traits, clothing, posture, demeanor."
         />
       </div>
       <div className="space-y-2">

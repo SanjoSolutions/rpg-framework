@@ -6,6 +6,8 @@ export const runtime = "nodejs"
 
 const settingsSchema = z.object({
   useLocalLlm: z.boolean().optional(),
+  requireConsent: z.boolean().optional(),
+  memoriesEnabled: z.boolean().optional(),
 })
 
 export async function GET() {

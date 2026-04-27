@@ -84,3 +84,76 @@ export function deleteMessage(id: string): boolean {
 export function clearScenarioMessages(scenarioId: string): void {
   getDb().prepare("DELETE FROM messages WHERE scenario_id = ?").run(scenarioId)
 }
+
+export interface ConsentEventMeta {
+  characterId: string
+  characterName: string
+  decision: "yes" | "no"
+  reason: string
+}
+
+export interface MessageAttempt {
+  intent: { speakerName: string; intent: string }
+  consents: ConsentEventMeta[]
+}
+
+export interface MessageMeta {
+  attempts: MessageAttempt[]
+}
+
+interface MetaRow {
+  message_id: string
+  intent: string | null
+  consents: string | null
+}
+
+function rowToMeta(row: MetaRow): MessageMeta {
+  if (!row.consents) {
+    if (row.intent) {
+      return {
+        attempts: [
+          {
+            intent: JSON.parse(row.intent) as MessageAttempt["intent"],
+            consents: [],
+          },
+        ],
+      }
+    }
+    return { attempts: [] }
+  }
+  const parsed = JSON.parse(row.consents) as
+    | ConsentEventMeta[]
+    | { attempts: MessageAttempt[] }
+  if (Array.isArray(parsed)) {
+    const intent = row.intent
+      ? (JSON.parse(row.intent) as MessageAttempt["intent"])
+      : { speakerName: "", intent: "" }
+    return { attempts: [{ intent, consents: parsed }] }
+  }
+  return { attempts: parsed.attempts ?? [] }
+}
+
+export function setMessageMeta(messageId: string, meta: MessageMeta): void {
+  if (meta.attempts.length === 0) return
+  const finalAttempt = meta.attempts[meta.attempts.length - 1]
+  getDb()
+    .prepare(
+      "INSERT INTO message_meta (message_id, intent, consents) VALUES (?, ?, ?) ON CONFLICT(message_id) DO UPDATE SET intent = excluded.intent, consents = excluded.consents",
+    )
+    .run(
+      messageId,
+      JSON.stringify(finalAttempt.intent),
+      JSON.stringify({ attempts: meta.attempts }),
+    )
+}
+
+export function listMessageMetaForScenario(scenarioId: string): Record<string, MessageMeta> {
+  const rows = getDb()
+    .prepare(
+      "SELECT mm.* FROM message_meta mm JOIN messages m ON m.id = mm.message_id WHERE m.scenario_id = ?",
+    )
+    .all(scenarioId) as MetaRow[]
+  const out: Record<string, MessageMeta> = {}
+  for (const r of rows) out[r.message_id] = rowToMeta(r)
+  return out
+}

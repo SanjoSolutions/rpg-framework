@@ -18,7 +18,7 @@ beforeEach(async () => {
   const { getDb } = await import("./db")
   const db = getDb()
   db.exec(
-    "DELETE FROM messages; DELETE FROM scenario_characters; DELETE FROM scenarios; DELETE FROM characters; DELETE FROM locations;",
+    "DELETE FROM memory_characters; DELETE FROM memories; DELETE FROM messages; DELETE FROM scenario_characters; DELETE FROM scenarios; DELETE FROM characters; DELETE FROM locations;",
   )
 })
 
@@ -29,7 +29,7 @@ describe("characters repository", () => {
 
     const created = createCharacter({
       name: "  Aria  ",
-      description: "A bard",
+      appearance: "A bard",
       personality: "Witty",
       voice: " Eve ",
     })
@@ -45,7 +45,7 @@ describe("characters repository", () => {
 
     const updated = updateCharacter(created.id, {
       name: "Aria the Bold",
-      description: "A bard",
+      appearance: "A bard",
       personality: "Witty",
       voice: null,
     })
@@ -155,5 +155,77 @@ describe("messages repository", () => {
 
     clearScenarioMessages(s.id)
     expect(listMessages(s.id)).toHaveLength(0)
+  })
+})
+
+describe("memories repository", () => {
+  it("filters memories by scene relevance", async () => {
+    const { createCharacter } = await import("./characters")
+    const { createLocation } = await import("./locations")
+    const { addMemory, listMemoriesForScene } = await import("./memories")
+
+    const aria = createCharacter({ name: "Aria" })
+    const ben = createCharacter({ name: "Ben" })
+    const cleo = createCharacter({ name: "Cleo" })
+    const tavern = createLocation({ name: "Tavern" })
+    const market = createLocation({ name: "Market" })
+
+    const generic = addMemory({ ownerCharacterId: aria.id, content: "generic" })
+    const aboutBen = addMemory({
+      ownerCharacterId: aria.id,
+      content: "ben fact",
+      associatedCharacterIds: [ben.id],
+    })
+    const atTavern = addMemory({
+      ownerCharacterId: aria.id,
+      content: "tavern fact",
+      locationId: tavern.id,
+    })
+    const benAtTavern = addMemory({
+      ownerCharacterId: aria.id,
+      content: "ben at tavern",
+      associatedCharacterIds: [ben.id],
+      locationId: tavern.id,
+    })
+    const aboutCleo = addMemory({
+      ownerCharacterId: aria.id,
+      content: "cleo fact",
+      associatedCharacterIds: [cleo.id],
+    })
+
+    // Scene at tavern with Ben present:
+    const sceneIds = listMemoriesForScene({
+      ownerCharacterId: aria.id,
+      presentCharacterIds: [aria.id, ben.id],
+      locationId: tavern.id,
+    }).map((m) => m.id)
+    expect(sceneIds).toContain(generic.id)
+    expect(sceneIds).toContain(aboutBen.id)
+    expect(sceneIds).toContain(atTavern.id)
+    expect(sceneIds).toContain(benAtTavern.id)
+    expect(sceneIds).not.toContain(aboutCleo.id)
+
+    // Scene at market with no others present:
+    const aloneIds = listMemoriesForScene({
+      ownerCharacterId: aria.id,
+      presentCharacterIds: [aria.id],
+      locationId: market.id,
+    }).map((m) => m.id)
+    expect(aloneIds).toContain(generic.id)
+    expect(aloneIds).not.toContain(aboutBen.id)
+    expect(aloneIds).not.toContain(atTavern.id)
+    expect(aloneIds).not.toContain(aboutCleo.id)
+  })
+
+  it("cascades on character deletion", async () => {
+    const { createCharacter, deleteCharacter } = await import("./characters")
+    const { addMemory, listMemoriesForOwner } = await import("./memories")
+
+    const aria = createCharacter({ name: "Aria" })
+    addMemory({ ownerCharacterId: aria.id, content: "x" })
+    expect(listMemoriesForOwner(aria.id)).toHaveLength(1)
+
+    deleteCharacter(aria.id)
+    expect(listMemoriesForOwner(aria.id)).toHaveLength(0)
   })
 })

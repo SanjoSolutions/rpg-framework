@@ -39,6 +39,10 @@ interface SettingsState {
   loaded: boolean
   useLocalLlm: boolean
   setUseLocalLlm: (value: boolean) => void
+  requireConsent: boolean
+  setRequireConsent: (value: boolean) => void
+  memoriesEnabled: boolean
+  setMemoriesEnabled: (value: boolean) => void
   voiceEnabled: boolean
   setVoiceEnabled: (value: boolean) => void
 }
@@ -48,6 +52,8 @@ const SettingsContext = createContext<SettingsState | null>(null)
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
   const [useLocalLlm, setUseLocalLlmState] = useState(false)
+  const [requireConsent, setRequireConsentState] = useState(false)
+  const [memoriesEnabled, setMemoriesEnabledState] = useState(false)
   const voiceEnabled = useSyncExternalStore(subscribeVoice, readVoice, readVoiceServer)
 
   useEffect(() => {
@@ -57,6 +63,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       .then((data) => {
         if (cancelled) return
         if (data && typeof data.useLocalLlm === "boolean") setUseLocalLlmState(data.useLocalLlm)
+        if (data && typeof data.requireConsent === "boolean") setRequireConsentState(data.requireConsent)
+        if (data && typeof data.memoriesEnabled === "boolean") setMemoriesEnabledState(data.memoriesEnabled)
       })
       .catch(() => {})
       .finally(() => {
@@ -76,6 +84,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }).catch(() => {})
   }, [])
 
+  const setRequireConsent = useCallback((value: boolean) => {
+    setRequireConsentState(value)
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requireConsent: value }),
+    }).catch(() => {})
+  }, [])
+
+  const setMemoriesEnabled = useCallback((value: boolean) => {
+    setMemoriesEnabledState(value)
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memoriesEnabled: value }),
+    }).catch(() => {})
+  }, [])
+
   const setVoiceEnabled = useCallback((value: boolean) => {
     try {
       localStorage.setItem(VOICE_KEY, String(value))
@@ -86,7 +112,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <SettingsContext.Provider value={{ loaded, useLocalLlm, setUseLocalLlm, voiceEnabled, setVoiceEnabled }}>
+    <SettingsContext.Provider
+      value={{
+        loaded,
+        useLocalLlm,
+        setUseLocalLlm,
+        requireConsent,
+        setRequireConsent,
+        memoriesEnabled,
+        setMemoriesEnabled,
+        voiceEnabled,
+        setVoiceEnabled,
+      }}
+    >
       {children}
     </SettingsContext.Provider>
   )

@@ -22,7 +22,7 @@ function applySchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS characters (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
+      appearance TEXT NOT NULL DEFAULT '',
       personality TEXT NOT NULL DEFAULT '',
       voice TEXT,
       created_at INTEGER NOT NULL,
@@ -67,5 +67,43 @@ function applySchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_scenario ON messages(scenario_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS message_meta (
+      message_id TEXT PRIMARY KEY,
+      intent TEXT,
+      consents TEXT,
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      owner_character_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      location_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (owner_character_id) REFERENCES characters(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_characters (
+      memory_id TEXT NOT NULL,
+      character_id TEXT NOT NULL,
+      PRIMARY KEY (memory_id, character_id),
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+      FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(owner_character_id);
+    CREATE INDEX IF NOT EXISTS idx_memories_location ON memories(location_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_characters_character ON memory_characters(character_id);
   `)
+
+  const characterColumns = db
+    .prepare("SELECT name FROM pragma_table_info('characters')")
+    .all() as { name: string }[]
+  const columnNames = new Set(characterColumns.map((c) => c.name))
+  if (columnNames.has("description") && !columnNames.has("appearance")) {
+    db.exec("ALTER TABLE characters RENAME COLUMN description TO appearance")
+  }
 }

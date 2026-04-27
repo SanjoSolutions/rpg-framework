@@ -8,6 +8,7 @@ const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/characters", label: "Characters" },
   { href: "/locations", label: "Locations" },
   { href: "/scenarios", label: "Scenarios" },
+  { href: "/memories", label: "Memories" },
   { href: "/settings", label: "Settings" },
 ]
 

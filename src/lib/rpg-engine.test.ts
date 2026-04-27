@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { parseSpeakerCandidates, pickNextSpeaker } from "./rpg-engine"
+import {
+  buildAliasMap,
+  parseConsentResponse,
+  parseExtractedMemories,
+  parseIntentProposal,
+  parseSpeakerCandidates,
+  pickNextSpeaker,
+} from "./rpg-engine"
 import type { Character } from "./characters"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
@@ -18,7 +25,7 @@ function makeCharacter(id: string, name: string): Character {
   return {
     id,
     name,
-    description: "",
+    appearance: "",
     personality: "",
     voice: null,
     createdAt: 0,
@@ -107,5 +114,130 @@ describe("parseSpeakerCandidates", () => {
 
   it("returns an empty array when nothing matches", () => {
     expect(parseSpeakerCandidates("nobody", eligible)).toEqual([])
+  })
+})
+
+describe("buildAliasMap", () => {
+  it("aliases every character except the POV", () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const rex = makeCharacter("c3", "Rex")
+    const aliases = buildAliasMap([aria, jenny, rex], "c2")
+    expect(aliases.has("c2")).toBe(false)
+    expect(aliases.get("c1")).toBe("Stranger 1")
+    expect(aliases.get("c3")).toBe("Stranger 2")
+  })
+})
+
+describe("parseIntentProposal", () => {
+  const aria = makeCharacter("c1", "Aria")
+  const jenny = makeCharacter("c2", "Jenny")
+  const candidates = [aria, jenny]
+
+  it("extracts intent and target ids from labeled output", () => {
+    const raw = "INTENT: I take Jenny's hand and pull her aside.\nINVOLVES: c2"
+    expect(parseIntentProposal(raw, candidates)).toEqual({
+      intent: "I take Jenny's hand and pull her aside.",
+      targetIds: ["c2"],
+    })
+  })
+
+  it("returns no targets when INVOLVES is NONE", () => {
+    const raw = "INTENT: I pace the room, thinking.\nINVOLVES: NONE"
+    expect(parseIntentProposal(raw, candidates)).toEqual({
+      intent: "I pace the room, thinking.",
+      targetIds: [],
+    })
+  })
+
+  it("dedupes target ids", () => {
+    const raw = "INTENT: I challenge them both.\nINVOLVES: c1, c2, c1"
+    expect(parseIntentProposal(raw, candidates).targetIds).toEqual(["c1", "c2"])
+  })
+
+  it("falls back to the first non-empty line when INTENT is missing", () => {
+    const raw = "I sit down quietly.\nINVOLVES: NONE"
+    expect(parseIntentProposal(raw, candidates).intent).toBe("I sit down quietly.")
+  })
+
+  it("matches POV aliases when LLM outputs Stranger labels instead of ids", () => {
+    const raw = "INTENT: I grab her hand.\nINVOLVES: Stranger 1"
+    const aliases = new Map([["c2", "Stranger 1"]])
+    const out = parseIntentProposal(raw, candidates, aliases)
+    expect(out.targetIds).toEqual(["c2"])
+  })
+})
+
+describe("parseConsentResponse", () => {
+  const jenny = makeCharacter("c2", "Jenny")
+
+  it("parses a YES decision with reason", () => {
+    const raw = "DECISION: YES\nREASON: I trust her."
+    expect(parseConsentResponse(raw, jenny)).toEqual({
+      characterId: "c2",
+      characterName: "Jenny",
+      decision: "yes",
+      reason: "I trust her.",
+    })
+  })
+
+  it("parses a NO decision with reason", () => {
+    const raw = "DECISION: NO\nREASON: I'm not comfortable with that."
+    expect(parseConsentResponse(raw, jenny)).toEqual({
+      characterId: "c2",
+      characterName: "Jenny",
+      decision: "no",
+      reason: "I'm not comfortable with that.",
+    })
+  })
+
+  it("treats ambiguous output as a refusal", () => {
+    const raw = "Hmm, maybe?"
+    const result = parseConsentResponse(raw, jenny)
+    expect(result.decision).toBe("no")
+  })
+
+  it("recognizes refusal phrasing without DECISION label", () => {
+    const raw = "I refuse — that's too much."
+    const result = parseConsentResponse(raw, jenny)
+    expect(result.decision).toBe("no")
+  })
+})
+
+describe("parseExtractedMemories", () => {
+  const aria = makeCharacter("c1", "Aria")
+  const jenny = makeCharacter("c2", "Jenny")
+  const candidates = [aria, jenny]
+
+  it("parses a typical multi-line response", () => {
+    const raw = [
+      "1. Aria revealed she fled the capital | characters: c1 | location: NO",
+      "2. The tavern was unusually quiet tonight | characters: NONE | location: YES",
+      "3. Jenny and Aria seem to know each other | characters: c1, c2 | location: NO",
+    ].join("\n")
+    const out = parseExtractedMemories(raw, candidates)
+    expect(out).toEqual([
+      { content: "Aria revealed she fled the capital", characterIds: ["c1"], locationRelevant: false },
+      { content: "The tavern was unusually quiet tonight", characterIds: [], locationRelevant: true },
+      {
+        content: "Jenny and Aria seem to know each other",
+        characterIds: ["c1", "c2"],
+        locationRelevant: false,
+      },
+    ])
+  })
+
+  it("returns an empty array for NONE", () => {
+    expect(parseExtractedMemories("NONE", candidates)).toEqual([])
+  })
+
+  it("ignores unparseable lines", () => {
+    const raw = [
+      "Some preamble that should be ignored",
+      "1. Real memory | characters: NONE | location: NO",
+    ].join("\n")
+    const out = parseExtractedMemories(raw, candidates)
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe("Real memory")
   })
 })

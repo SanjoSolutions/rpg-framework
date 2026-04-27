@@ -179,8 +179,8 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
                 />
                 <div className="min-w-0">
                   <div className="font-medium text-sm">{c.name}</div>
-                  {c.description && (
-                    <div className="text-xs text-muted-foreground line-clamp-1">{c.description}</div>
+                  {c.appearance && (
+                    <div className="text-xs text-muted-foreground line-clamp-1">{c.appearance}</div>
                   )}
                 </div>
               </label>

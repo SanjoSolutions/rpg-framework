@@ -13,15 +13,15 @@ const FIELDS: Record<AssistEntityType, Record<string, FieldDescriptor>> = {
       label: "Name",
       guidance: "A short proper name (1–3 words). Output only the name itself.",
     },
-    description: {
-      label: "Description",
+    appearance: {
+      label: "Appearance",
       guidance:
-        "Appearance, role, history. One or two short paragraphs of vivid, concrete prose.",
+        "Only what others see at a glance: physical traits, clothing, posture, demeanor. NO inner traits, history, or motivations — those belong in Personality. One short paragraph.",
     },
     personality: {
       label: "Personality",
       guidance:
-        "Mannerisms, voice, mood, motivations. One or two short paragraphs that read like a character brief.",
+        "Inner self: mannerisms, voice, mood, motivations, beliefs, history, secrets. Things others learn only by interacting with this character — not visible on the surface. One or two short paragraphs.",
     },
     voice: {
       label: "Voice id",

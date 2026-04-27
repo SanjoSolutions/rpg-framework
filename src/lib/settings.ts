@@ -2,10 +2,14 @@ import { getDb } from "./db"
 
 export interface AppSettings {
   useLocalLlm: boolean
+  requireConsent: boolean
+  memoriesEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   useLocalLlm: false,
+  requireConsent: false,
+  memoriesEnabled: false,
 }
 
 function ensureTable(): void {
@@ -26,6 +30,8 @@ export function getSettings(): AppSettings {
   const map = new Map(rows.map((r) => [r.key, r.value]))
   return {
     useLocalLlm: map.get("useLocalLlm") === "true",
+    requireConsent: map.get("requireConsent") === "true",
+    memoriesEnabled: map.get("memoriesEnabled") === "true",
   }
 }
 
@@ -36,6 +42,12 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   )
   if (patch.useLocalLlm !== undefined) {
     stmt.run("useLocalLlm", String(patch.useLocalLlm))
+  }
+  if (patch.requireConsent !== undefined) {
+    stmt.run("requireConsent", String(patch.requireConsent))
+  }
+  if (patch.memoriesEnabled !== undefined) {
+    stmt.run("memoriesEnabled", String(patch.memoriesEnabled))
   }
   return getSettings()
 }

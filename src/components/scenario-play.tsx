@@ -1,13 +1,14 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useDevSidebar } from "@/hooks/use-dev-sidebar"
 import { useSettings } from "@/hooks/use-settings"
 import type { Character } from "@/lib/characters"
-import type { Message } from "@/lib/messages"
+import type { Memory } from "@/lib/memories"
+import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 
 interface SpeakerInfo {
   kind: "character" | "narrator"
@@ -19,24 +20,68 @@ interface PendingTurn extends SpeakerInfo {
   content: string
 }
 
+interface ConsentEvent {
+  id: string
+  targetName: string
+  speakerName: string
+  intent: string
+  decision: "yes" | "no" | null
+  reason: string | null
+}
+
+interface AttemptUI {
+  intent: { speakerName: string; intent: string }
+  consents: ConsentEvent[]
+}
+
 interface Props {
   scenarioId: string
   initialMessages: Message[]
+  initialMessageMeta?: Record<string, MessageMeta>
   characters: Character[]
 }
 
-export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props) {
+function seedMessageConsents(
+  meta: Record<string, MessageMeta> | undefined,
+): Record<string, AttemptUI[]> {
+  if (!meta) return {}
+  const out: Record<string, AttemptUI[]> = {}
+  for (const [messageId, m] of Object.entries(meta)) {
+    out[messageId] = m.attempts.map((a) => ({
+      intent: a.intent,
+      consents: a.consents.map((c: ConsentEventMeta) => ({
+        id: c.characterId,
+        targetName: c.characterName,
+        speakerName: a.intent.speakerName,
+        intent: a.intent.intent,
+        decision: c.decision,
+        reason: c.reason,
+      })),
+    }))
+  }
+  return out
+}
+
+export function ScenarioPlay({ scenarioId, initialMessages, initialMessageMeta, characters }: Props) {
   const { voiceEnabled, setVoiceEnabled } = useSettings()
-  const { showRawMessages } = useDevSidebar()
+  const { showRawMessages, showMemories } = useDevSidebar()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState("")
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
+  const [pendingAttempts, setPendingAttempts] = useState<AttemptUI[]>([])
+  const [messageConsents, setMessageConsents] = useState<Record<string, AttemptUI[]>>(() =>
+    seedMessageConsents(initialMessageMeta),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
+  const [sceneMemories, setSceneMemories] = useState<
+    { characterId: string; characterName: string; memories: Memory[] }[]
+  >([])
   const abortRef = useRef<AbortController | null>(null)
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const pendingAttemptsRef = useRef<AttemptUI[]>([])
   const hasCharacters = characters.length > 0
 
   useEffect(() => {
@@ -45,6 +90,23 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
       .then((d) => setServerTtsAvailable(d.available))
       .catch(() => setServerTtsAvailable(false))
   }, [])
+
+  const refreshSceneMemories = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/scenarios/${scenarioId}/memories`)
+      if (!res.ok) return
+      const data = (await res.json()) as {
+        byCharacter: { characterId: string; characterName: string; memories: Memory[] }[]
+      }
+      setSceneMemories(data.byCharacter)
+    } catch {
+      // ignore
+    }
+  }, [scenarioId])
+
+  useEffect(() => {
+    if (showMemories) refreshSceneMemories()
+  }, [showMemories, refreshSceneMemories])
 
   function speakerPrefix(characterId: string | null): string {
     if (!characterId) return ""
@@ -66,6 +128,8 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
     setError(null)
     setBusy(true)
     setPendingTurn(null)
+    setPendingAttempts([])
+    pendingAttemptsRef.current = []
     abortRef.current = new AbortController()
     try {
       const res = await fetch(`/api/scenarios/${scenarioId}/turn`, {
@@ -104,7 +168,61 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
             continue
           }
 
-          if (event === "speaker") {
+          if (event === "intent") {
+            const p = payload as { intent: string; speakerId: string | null }
+            const speakerName =
+              characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
+            const newAttempt: AttemptUI = {
+              intent: { speakerName, intent: p.intent },
+              consents: [],
+            }
+            pendingAttemptsRef.current = [...pendingAttemptsRef.current, newAttempt]
+            setPendingAttempts(pendingAttemptsRef.current)
+          } else if (event === "consent_request") {
+            const p = payload as {
+              targetId: string
+              targetName: string
+              speakerName: string
+              intent: string
+            }
+            const entry: ConsentEvent = {
+              id: p.targetId,
+              targetName: p.targetName,
+              speakerName: p.speakerName,
+              intent: p.intent,
+              decision: null,
+              reason: null,
+            }
+            const lastIndex = pendingAttemptsRef.current.length - 1
+            if (lastIndex >= 0) {
+              pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
+                i === lastIndex ? { ...a, consents: [...a.consents, entry] } : a,
+              )
+              setPendingAttempts(pendingAttemptsRef.current)
+            }
+          } else if (event === "consent_response") {
+            const p = payload as {
+              characterId: string
+              decision: "yes" | "no"
+              reason: string
+            }
+            const lastIndex = pendingAttemptsRef.current.length - 1
+            if (lastIndex >= 0) {
+              pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
+                i === lastIndex
+                  ? {
+                      ...a,
+                      consents: a.consents.map((c) =>
+                        c.id === p.characterId
+                          ? { ...c, decision: p.decision, reason: p.reason }
+                          : c,
+                      ),
+                    }
+                  : a,
+              )
+              setPendingAttempts(pendingAttemptsRef.current)
+            }
+          } else if (event === "speaker") {
             const p = payload as SpeakerInfo
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
             setPendingTurn(speaker)
@@ -132,8 +250,17 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
             sentenceSpeakerRef.current?.push(next.content)
           } else if (event === "message") {
             const message = payload as Message
+            const capturedAttempts = pendingAttemptsRef.current
             setMessages((current) => [...current, message])
             setPendingTurn(null)
+            if (capturedAttempts.length > 0) {
+              setMessageConsents((current) => ({
+                ...current,
+                [message.id]: capturedAttempts,
+              }))
+            }
+            setPendingAttempts([])
+            pendingAttemptsRef.current = []
             if (sentenceSpeakerRef.current) {
               sentenceSpeakerRef.current.flush()
               sentenceSpeakerRef.current = null
@@ -148,6 +275,8 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
                 }).catch(() => {})
               }
             }
+          } else if (event === "memory_learned") {
+            if (showMemories) refreshSceneMemories()
           } else if (event === "error") {
             setError((payload as { message: string }).message)
           }
@@ -205,27 +334,50 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
   async function clearTranscript() {
     if (!confirm("Clear all messages in this scenario?")) return
     const res = await fetch(`/api/scenarios/${scenarioId}/messages`, { method: "DELETE" })
-    if (res.ok) setMessages([])
+    if (res.ok) {
+      setMessages([])
+      setPendingAttempts([])
+      pendingAttemptsRef.current = []
+      setMessageConsents({})
+    }
   }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div ref={transcriptRef} className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-3">
-        {messages.length === 0 && !pendingTurn && (
-          <p className="text-sm text-muted-foreground">
-            No turns yet. Send a message or generate a turn to start the scene.
-          </p>
-        )}
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} showRaw={showRawMessages} />
-        ))}
-        {pendingTurn && (
-          <div className="rounded-lg bg-muted/60 p-3">
-            <div className="text-xs font-medium text-muted-foreground mb-1">{pendingTurn.name}</div>
-            <div className="whitespace-pre-wrap text-sm">
-              {pendingTurn.content || <span className="text-muted-foreground italic">…</span>}
+      <div className="flex flex-1 min-h-0">
+        <div ref={transcriptRef} className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-3">
+          {messages.length === 0 && !pendingTurn && (
+            <p className="text-sm text-muted-foreground">
+              No turns yet. Send a message or generate a turn to start the scene.
+            </p>
+          )}
+          {messages.map((m) => {
+            const attached = messageConsents[m.id]
+            return (
+              <div key={m.id} className="space-y-3">
+                {attached?.map((a, idx) => (
+                  <AttemptBlock key={idx} attempt={a} />
+                ))}
+                <MessageBubble message={m} showRaw={showRawMessages} />
+              </div>
+            )
+          })}
+          {pendingAttempts.map((a, idx) => (
+            <AttemptBlock key={`pending-${idx}`} attempt={a} />
+          ))}
+          {pendingTurn && (
+            <div className="rounded-lg bg-muted/60 p-3">
+              <div className="text-xs font-medium text-muted-foreground mb-1">{pendingTurn.name}</div>
+              <div className="whitespace-pre-wrap text-sm">
+                {pendingTurn.content || <span className="text-muted-foreground italic">…</span>}
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+        {showMemories && (
+          <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">
+            <SceneMemoriesPanel groups={sceneMemories} />
+          </aside>
         )}
       </div>
       {error && <div className="px-6 pb-2 text-sm text-destructive">{error}</div>}
@@ -268,6 +420,87 @@ export function ScenarioPlay({ scenarioId, initialMessages, characters }: Props)
           </div>
         </div>
       </form>
+    </div>
+  )
+}
+
+function SceneMemoriesPanel({
+  groups,
+}: {
+  groups: { characterId: string; characterName: string; memories: Memory[] }[]
+}) {
+  const nonEmpty = groups.filter((g) => g.memories.length > 0)
+  if (nonEmpty.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+        No scene-relevant memories for any character.
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-medium text-muted-foreground">Scene-relevant memories</div>
+      {nonEmpty.map((g) => (
+        <div key={g.characterId} className="space-y-1">
+          <div className="text-xs font-medium">{g.characterName}</div>
+          <ul className="text-xs text-muted-foreground space-y-1">
+            {g.memories.map((m) => (
+              <li key={m.id} className="border-l border-border pl-2">
+                <div>{m.content}</div>
+                <div className="text-[10px] opacity-70">{formatMemoryTimestamp(m.createdAt)}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function formatMemoryTimestamp(createdAt: number): string {
+  const d = new Date(createdAt)
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function AttemptBlock({ attempt }: { attempt: AttemptUI }) {
+  return (
+    <div className="space-y-2">
+      <IntentNote intent={attempt.intent} />
+      {attempt.consents.map((c) => (
+        <ConsentNote key={c.id} consent={c} />
+      ))}
+    </div>
+  )
+}
+
+function IntentNote({ intent }: { intent: { speakerName: string; intent: string } }) {
+  return (
+    <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+      <span className="font-medium">{intent.speakerName} intends:</span>{" "}
+      <span className="italic">{intent.intent}</span>
+    </div>
+  )
+}
+
+function ConsentNote({ consent }: { consent: ConsentEvent }) {
+  const decisionLabel =
+    consent.decision === null ? "thinking…" : consent.decision === "yes" ? "consented" : "refused"
+  const colorClass =
+    consent.decision === "no"
+      ? "border-destructive/40 bg-destructive/5 text-destructive"
+      : consent.decision === "yes"
+        ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+        : "border-border bg-muted/20 text-muted-foreground"
+  return (
+    <div className={`rounded-md border border-dashed px-3 py-2 text-xs ${colorClass}`}>
+      <span className="font-medium">{consent.targetName}</span> {decisionLabel}
+      {consent.reason && <span className="italic">: {consent.reason}</span>}
     </div>
   )
 }
