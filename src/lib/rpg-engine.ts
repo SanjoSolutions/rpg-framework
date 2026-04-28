@@ -992,18 +992,21 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           .filter((c) => c.id !== character.id)
           .map((c) => labelFor(c.id, c.name, aliases!))
       : []
-  const othersList = otherAliases.join(" or ")
+  const othersList = otherAliases.join(", ")
   const otherCharactersRules =
     otherAliases.length > 0
       ? [
-          `${othersList} are theirs to write. Their speech, sounds, thoughts, feelings, gestures, and reactions — including reactions to what you just did — belong to their next turn.`,
+          `Write only your own body and your own voice. Each of ${othersList} writes their own — their speech, sounds, thoughts, feelings, gestures, and reactions all belong to their own turn.`,
+          `End your turn the moment your own action and your own dialogue end. The next prose beat is theirs.`,
         ]
-      : []
+      : [
+          "Write only your own body and your own voice.",
+        ]
 
   const oneActionRule = [
-    "One beat per turn: one concrete physical action (a step, a reach, a draw, a touch), optionally paired with a line of dialogue. Stop the instant that action ends.",
-    "Your scope is what is objectively visible or audible in the scene — your own physical actions, your own spoken words.",
-    "Stay inside the scene, in the present moment, addressing the others with current action and current dialogue.",
+    "One beat per turn: one concrete physical action you yourself perform (a step, a reach, a draw, a touch), optionally paired with a line of your own dialogue. Stop the instant that action ends.",
+    "Your scope is what your own body does and what your own mouth says — your own physical actions, your own spoken words.",
+    "Stay inside the scene, in the present moment, addressing the others with your current action and your current dialogue.",
   ]
 
   const refusalLines = (refusals ?? [])
@@ -1034,8 +1037,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     character != null
       ? [
           "Each turn is one short beat — a few sentences at most. Speak or act, then stop and let the next character respond.",
-          ...oneActionRule,
           ...otherCharactersRules,
+          ...oneActionRule,
           "Respond in first person, in character. The reply is bare prose, beginning with your character's first word of speech or narration.",
           "Director lines in the transcript are authoritative out-of-character direction from the user steering the scene — let them shape your turn, in character.",
           "Characters listed by name above are known to you. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (appearance, voice, origin). Stranger names emerge through interaction.",
