@@ -1145,6 +1145,6 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     messages: chatMessages,
     signal: args.signal,
     onText: args.onText,
-    stop: character != null ? ["\n\n"] : undefined,
+    stop: character != null ? ["\n\n", "<|im_end|>"] : ["<|im_end|>"],
   })
 }
