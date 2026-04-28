@@ -20,6 +20,10 @@ if (!process.env.RPG_DB_PATH) {
   process.env.RPG_DB_PATH = path.join(exeDir, "data", "rpg.sqlite")
 }
 
+if (!process.env.HOSTNAME) {
+  process.env.HOSTNAME = "127.0.0.1"
+}
+
 process.chdir(appDir)
 
 const requireFromApp = Module.createRequire(serverPath)
