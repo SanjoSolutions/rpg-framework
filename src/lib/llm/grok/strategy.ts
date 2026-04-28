@@ -20,11 +20,21 @@ export const grokStrategy: LLMStrategy = {
 
   async streamChat(args: StreamChatArgs): Promise<void> {
     const xai = getProvider()
+    const baseMessages = args.messages.filter(
+      (m) => m.role !== "system" && m.content.length > 0,
+    )
+    const prefill = args.prefill ?? ""
+    const messages =
+      prefill.length > 0
+        ? [...baseMessages, { role: "assistant" as const, content: prefill }]
+        : baseMessages
+    if (prefill.length > 0) args.onText(prefill)
     const result = streamText({
       model: xai.responses(GROK_MODEL),
       system: args.system,
-      messages: args.messages.filter((m) => m.role !== "system" && m.content.length > 0),
+      messages,
       abortSignal: args.signal,
+      ...(args.stop && args.stop.length > 0 ? { stopSequences: args.stop } : {}),
     })
     for await (const chunk of result.textStream) {
       args.onText(chunk)

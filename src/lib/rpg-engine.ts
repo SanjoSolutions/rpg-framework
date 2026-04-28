@@ -1109,11 +1109,16 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     chatMessages.push({ role: "user", content: nudge })
   }
 
+  const prefill = character != null ? `[${character.name}]: ` : undefined
+  const stop = character != null ? ["\n["] : undefined
+
   await streamChat({
     backend: args.backend,
     system,
     messages: chatMessages,
     signal: args.signal,
     onText: args.onText,
+    prefill,
+    stop,
   })
 }

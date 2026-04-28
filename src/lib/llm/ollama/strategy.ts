@@ -26,8 +26,8 @@ export const ollamaStrategy: LLMStrategy = {
   name: "ollama",
 
   async streamChat(args: StreamChatArgs): Promise<void> {
-    const apiMessages = [
-      { role: "system" as const, content: args.system },
+    const apiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: args.system },
       ...args.messages
         .filter((m) => m.content.length > 0)
         .map((m) => ({
@@ -35,6 +35,12 @@ export const ollamaStrategy: LLMStrategy = {
           content: m.content,
         })),
     ]
+
+    const prefill = args.prefill ?? ""
+    if (prefill.length > 0) {
+      apiMessages.push({ role: "assistant", content: prefill })
+      args.onText(prefill)
+    }
 
     const response = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
       method: "POST",
@@ -46,6 +52,7 @@ export const ollamaStrategy: LLMStrategy = {
         temperature: 0.85,
         top_p: 0.95,
         min_p: 0.025,
+        ...(args.stop && args.stop.length > 0 ? { stop: args.stop } : {}),
       }),
       signal: args.signal,
     })

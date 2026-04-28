@@ -20,6 +20,19 @@ export interface StreamChatArgs {
   messages: ChatMessage[]
   signal?: AbortSignal
   onText: (chunk: string) => void
+  /**
+   * Hard stop sequences. Generation halts the moment any of these strings
+   * would be emitted. Used to prevent the model from opening a fresh
+   * `[Speaker]:` label mid-turn.
+   */
+  stop?: string[]
+  /**
+   * Assistant prefill — a string the model is forced to start its turn with.
+   * Strategy emits it via `onText` before streaming the continuation, then
+   * asks the provider to continue from it. Locks POV before the first
+   * sampled token. Optional; strategies that lack support may ignore it.
+   */
+  prefill?: string
 }
 
 export interface GenerateOnceArgs {

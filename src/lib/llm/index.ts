@@ -44,6 +44,8 @@ export async function streamChat(options: StreamOptions): Promise<void> {
       system: options.system,
       messages: truncated,
       signal: options.signal,
+      stop: options.stop,
+      prefill: options.prefill,
       onText: (chunk) => {
         response += chunk
         options.onText(chunk)
