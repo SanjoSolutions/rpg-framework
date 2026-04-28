@@ -252,30 +252,6 @@ export function ScenarioPlay({
     ttsChainRef.current = Promise.resolve()
   }
 
-  async function waitForTtsIdle() {
-    if (!voiceEnabled) return
-    // Drain any queued server-TTS plays first. New enqueues during the await
-    // re-chain off the latest promise, so re-read the ref until it settles.
-    while (true) {
-      const snapshot = ttsChainRef.current
-      try {
-        await snapshot
-      } catch {
-        // ignore
-      }
-      if (!runningRef.current) return
-      if (ttsChainRef.current === snapshot) break
-    }
-    // Drain browser speechSynthesis (used by SentenceSpeaker for sentence-
-    // level browser TTS, which bypasses ttsChainRef).
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      const synth = window.speechSynthesis
-      while (runningRef.current && (synth.speaking || synth.pending)) {
-        await new Promise((r) => setTimeout(r, 100))
-      }
-    }
-  }
-
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages, pendingTurn])
@@ -497,16 +473,31 @@ export function ScenarioPlay({
     resetTtsQueue()
     runningRef.current = true
     setRunning(true)
+    // Cap pre-generation at one message in advance: each iteration generates
+    // the next turn while the previous one's TTS is still playing, then waits
+    // for that previous TTS to finish before starting another generation.
+    let previousTtsTail: Promise<unknown> = Promise.resolve()
     while (runningRef.current && hasCharacters) {
-      // Resume the loop as soon as the previous turn's user-visible
-      // messages have landed. The previous SSE stream keeps running for
-      // post-task events (memory + name extraction).
       await new Promise<void>((resolve) => {
         void generateTurn({ onVisibleDone: resolve })
       })
       if (!runningRef.current) break
-      // Hold the next turn until the current message has finished speaking.
-      await waitForTtsIdle()
+      if (voiceEnabled) {
+        try {
+          await previousTtsTail
+        } catch {
+          // ignore
+        }
+        // Browser speechSynthesis can't be partitioned per message, so drain
+        // it fully when that backend is in use.
+        if (useBrowserTts && typeof window !== "undefined" && "speechSynthesis" in window) {
+          const synth = window.speechSynthesis
+          while (runningRef.current && (synth.speaking || synth.pending)) {
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+      }
+      previousTtsTail = ttsChainRef.current
       if (!runningRef.current) break
     }
     runningRef.current = false
