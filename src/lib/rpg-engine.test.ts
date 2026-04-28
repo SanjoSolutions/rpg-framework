@@ -136,6 +136,94 @@ describe("pickNextSpeaker", () => {
     expect(speaker).toEqual({ kind: "character", characterId: "c3", name: "Rex" })
   })
 
+  it("restricts eligibility to Director-mentioned characters", async () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const rex = makeCharacter("c3", "Rex")
+    const directorTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "narrator",
+      speakerId: null,
+      speakerName: "Director",
+      content: "Aria and Jenny step aside to whisper.",
+      kind: null,
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id, rex.id] },
+        location: null,
+        characters: [aria, jenny, rex],
+      },
+      messages: [directorTurn],
+      rng: () => 0.99,
+    })
+    expect(["c1", "c2"]).toContain(speaker.characterId)
+  })
+
+  it("lets the Director re-call the most recent speaker", async () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const ariaTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "character",
+      speakerId: aria.id,
+      speakerName: aria.name,
+      content: "I trail off, uncertain.",
+      kind: null,
+      createdAt: 1,
+    }
+    const directorTurn: Message = {
+      id: "m2",
+      scenarioId: "s1",
+      speakerKind: "narrator",
+      speakerId: null,
+      speakerName: "Director",
+      content: "Aria, finish your thought.",
+      kind: null,
+      createdAt: 2,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id] },
+        location: null,
+        characters: [aria, jenny],
+      },
+      messages: [ariaTurn, directorTurn],
+    })
+    expect(speaker).toEqual({ kind: "character", characterId: "c1", name: "Aria" })
+  })
+
+  it("falls back to normal eligibility when a Director line names no present character", async () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const directorTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "narrator",
+      speakerId: null,
+      speakerName: "Director",
+      content: "The wind picks up outside.",
+      kind: null,
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id] },
+        location: null,
+        characters: [aria, jenny],
+      },
+      messages: [directorTurn],
+      rng: () => 0,
+    })
+    expect(["c1", "c2"]).toContain(speaker.characterId)
+  })
+
   it("excludes the most recent character speaker, picking the other when only two characters", async () => {
     const vixxen = makeCharacter("c1", "Vixxen")
     const jenny = makeCharacter("c2", "Jenny")

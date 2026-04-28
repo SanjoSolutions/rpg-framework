@@ -233,6 +233,12 @@ function silenceWeights(chars: readonly Character[], messages: Message[]): numbe
  * silent (`turnsSinceLastSpoke + 1`). When nothing is mentioned, or every
  * eligible character is mentioned, the full mass is split among that one
  * group on the same silence-weighted basis.
+ *
+ * Director override: when the latest message is a Director line, the
+ * eligible pool is restricted to the characters it names — the user is
+ * steering the scene, so only those characters may take the next turn.
+ * If the Director line names nobody (or nobody present), normal eligibility
+ * applies.
  */
 export async function pickNextSpeaker(args: {
   backend: LLMBackend
@@ -253,6 +259,10 @@ export async function pickNextSpeaker(args: {
     return { kind: "character", characterId: only.id, name: only.name }
   }
 
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
+  const lastIsDirector =
+    lastMessage?.speakerKind === "narrator" && lastMessage.speakerName === "Director"
+
   const lastCharacterMessage = [...messages]
     .reverse()
     .find(
@@ -261,16 +271,26 @@ export async function pickNextSpeaker(args: {
         m.kind !== "fulfillment" &&
         m.kind !== "consent",
     )
-  const eligible = lastCharacterMessage
+  const defaultEligible = lastCharacterMessage
     ? context.characters.filter((c) => c.id !== lastCharacterMessage.speakerId)
     : context.characters
+
+  let eligible = defaultEligible
+
+  if (lastIsDirector) {
+    const text = lastMessage!.content
+    const directorMentioned = context.characters.filter((c) => {
+      const names = [c.name, c.strangerName].filter((n): n is string => Boolean(n?.trim()))
+      return names.some((n) => mentionsOwnName(text, n))
+    })
+    if (directorMentioned.length > 0) eligible = directorMentioned
+  }
 
   if (eligible.length === 1) {
     const only = eligible[0]
     return { kind: "character", characterId: only.id, name: only.name }
   }
 
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
   const mentionedIds = new Set<string>()
   if (lastMessage) {
     const text = lastMessage.content
