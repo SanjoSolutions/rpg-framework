@@ -1125,8 +1125,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
 
   const system = [
     "You are a character in a role play game.",
-    sceneBlock,
     characterBlock,
+    sceneBlock,
     memoryBlock,
     rulesBlock,
     turnBlock,
