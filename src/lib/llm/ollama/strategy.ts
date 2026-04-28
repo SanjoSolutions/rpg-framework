@@ -42,17 +42,19 @@ export const ollamaStrategy: LLMStrategy = {
       args.onText(prefill)
     }
 
-    const response = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+    const response = await fetch(`${getBaseUrl()}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: getModel(),
         messages: apiMessages,
         stream: true,
-        temperature: 0.85,
-        top_p: 0.95,
-        min_p: 0.025,
-        ...(args.stop && args.stop.length > 0 ? { stop: args.stop } : {}),
+        options: {
+          temperature: 0.85,
+          top_p: 0.95,
+          min_p: 0.025,
+          ...(args.stop && args.stop.length > 0 ? { stop: args.stop } : {}),
+        },
       }),
       signal: args.signal,
     })
@@ -77,18 +79,17 @@ export const ollamaStrategy: LLMStrategy = {
 
       for (const line of lines) {
         const trimmed = line.trim()
-        if (!trimmed.startsWith("data:")) continue
-        const payload = trimmed.slice(5).trim()
-        if (payload === "[DONE]") return
-        if (!payload) continue
+        if (!trimmed) continue
         try {
-          const chunk = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string } }>
+          const chunk = JSON.parse(trimmed) as {
+            message?: { content?: string }
+            done?: boolean
           }
-          const delta = chunk.choices?.[0]?.delta?.content
+          const delta = chunk.message?.content
           if (delta) args.onText(delta)
+          if (chunk.done) return
         } catch {
-          // Skip malformed SSE payloads — server occasionally sends them on backend hiccups.
+          // Skip malformed NDJSON payloads — server occasionally sends them on backend hiccups.
         }
       }
     }
