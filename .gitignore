@@ -114,6 +114,7 @@ e2e/.auth/
 
 # local scratch
 a.txt
+/experiment-results/
 GEMINI.md
 # temporary screenshots
 /*.png
