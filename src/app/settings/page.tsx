@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { WebhooksManager } from "@/components/webhooks-manager"
 import { useSettings } from "@/hooks/use-settings"
 import { LlmBackendSettings } from "@/lib/llm/settings-ui"
 import { LLM_BACKEND_LABELS, LLM_BACKENDS, type LLMBackend } from "@/lib/llm/types"
@@ -143,6 +144,15 @@ export default function SettingsPage() {
             aria-label="Characters need to learn names"
           />
         </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Webhooks</h2>
+        <p className="text-sm text-muted-foreground">
+          Receive HTTP callbacks when scenes, characters, locations, messages, memories, or settings
+          change. Useful for syncing with external tools or automating side-effects.
+        </p>
+        <WebhooksManager />
       </section>
     </div>
   )

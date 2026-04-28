@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { appendMessage, clearScenarioMessages, listMessages } from "@/lib/messages"
 import { getScenario, touchScenario } from "@/lib/scenarios"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     content: parsed.data.content,
   })
   touchScenario(id)
+  dispatchWebhook("message.created", { message })
   return NextResponse.json({ message }, { status: 201 })
 }
 
@@ -42,5 +44,6 @@ export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id:
   if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
   clearScenarioMessages(id)
   touchScenario(id)
+  dispatchWebhook("message.cleared", { scenarioId: id })
   return NextResponse.json({ ok: true })
 }

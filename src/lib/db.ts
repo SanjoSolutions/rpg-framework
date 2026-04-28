@@ -125,6 +125,17 @@ function applySchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_acq_knower ON character_acquaintances(knower_id);
     CREATE INDEX IF NOT EXISTS idx_acq_known ON character_acquaintances(known_id);
 
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      events TEXT NOT NULL DEFAULT '[]',
+      secret TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      description TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS activation (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       access_token TEXT NOT NULL,

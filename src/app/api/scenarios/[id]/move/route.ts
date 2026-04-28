@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getScenario, setCharacterLocation, setScenarioActiveLocation } from "@/lib/scenarios"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -31,10 +32,19 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     if (!ok) {
       return NextResponse.json({ error: "Character not in this scenario" }, { status: 400 })
     }
+    dispatchWebhook("scenario.character_moved", {
+      scenarioId: scenario.id,
+      characterId,
+      locationId,
+    })
   }
 
   if (setActive) {
     setScenarioActiveLocation(scenario.id, locationId)
+    dispatchWebhook("scenario.scene_activated", {
+      scenarioId: scenario.id,
+      locationId,
+    })
   }
 
   const updated = getScenario(scenario.id)

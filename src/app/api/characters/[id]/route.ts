@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { deleteCharacter, getCharacter, updateCharacter } from "@/lib/characters"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -28,11 +29,13 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
   }
   const character = updateCharacter(id, parsed.data)
   if (!character) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("character.updated", { character })
   return NextResponse.json({ character })
 }
 
 export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   if (!deleteCharacter(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("character.deleted", { id })
   return NextResponse.json({ ok: true })
 }

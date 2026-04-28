@@ -7,6 +7,7 @@ import {
   normalizeMemoryReferences,
   updateMemory,
 } from "@/lib/memories"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -36,11 +37,13 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
     : parsed.data
   const memory = updateMemory(id, patch)
   if (!memory) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("memory.updated", { memory })
   return NextResponse.json({ memory })
 }
 
 export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   if (!deleteMemory(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("memory.deleted", { id })
   return NextResponse.json({ ok: true })
 }

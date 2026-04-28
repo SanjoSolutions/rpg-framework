@@ -39,6 +39,13 @@ function rowToMessage(row: Row): Message {
   }
 }
 
+export function getMessage(id: string): Message | null {
+  const row = getDb()
+    .prepare("SELECT * FROM messages WHERE id = ?")
+    .get(id) as Row | undefined
+  return row ? rowToMessage(row) : null
+}
+
 export function listMessages(scenarioId: string): Message[] {
   const rows = getDb()
     .prepare("SELECT * FROM messages WHERE scenario_id = ? ORDER BY created_at, id")

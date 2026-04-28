@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { createScenario, listScenarios } from "@/lib/scenarios"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -24,5 +25,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
   const scenario = createScenario(parsed.data)
+  dispatchWebhook("scenario.created", { scenario })
   return NextResponse.json({ scenario }, { status: 201 })
 }

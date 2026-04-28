@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { deleteLocation, getLocation, updateLocation } from "@/lib/locations"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -25,11 +26,13 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
   }
   const location = updateLocation(id, parsed.data)
   if (!location) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("location.updated", { location })
   return NextResponse.json({ location })
 }
 
 export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   if (!deleteLocation(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("location.deleted", { id })
   return NextResponse.json({ ok: true })
 }

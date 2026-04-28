@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { deleteScenario, getScenario, updateScenario } from "@/lib/scenarios"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -29,11 +30,13 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
   }
   const scenario = updateScenario(id, parsed.data)
   if (!scenario) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("scenario.updated", { scenario })
   return NextResponse.json({ scenario })
 }
 
 export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   if (!deleteScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  dispatchWebhook("scenario.deleted", { id })
   return NextResponse.json({ ok: true })
 }

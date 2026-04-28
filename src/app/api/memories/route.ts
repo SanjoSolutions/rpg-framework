@@ -7,6 +7,7 @@ import {
   listMemoriesForOwner,
   normalizeMemoryReferences,
 } from "@/lib/memories"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -35,5 +36,6 @@ export async function POST(request: NextRequest) {
     content: normalizeMemoryReferences(parsed.data.content, characters),
   }
   const memory = addMemory(normalized)
+  dispatchWebhook("memory.created", { memory })
   return NextResponse.json({ memory }, { status: 201 })
 }

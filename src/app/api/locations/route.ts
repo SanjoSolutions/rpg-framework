@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { createLocation, listLocations } from "@/lib/locations"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -20,5 +21,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
   const location = createLocation(parsed.data)
+  dispatchWebhook("location.created", { location })
   return NextResponse.json({ location }, { status: 201 })
 }

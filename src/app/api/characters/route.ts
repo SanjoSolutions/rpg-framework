@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { createCharacter, listCharacters } from "@/lib/characters"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -23,5 +24,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
   const character = createCharacter(parsed.data)
+  dispatchWebhook("character.created", { character })
   return NextResponse.json({ character }, { status: 201 })
 }

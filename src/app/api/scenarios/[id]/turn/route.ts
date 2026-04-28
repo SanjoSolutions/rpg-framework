@@ -34,6 +34,7 @@ import {
 } from "@/lib/rpg-engine"
 import { getScenario, setCharacterLocation, touchScenario } from "@/lib/scenarios"
 import { getSettings } from "@/lib/settings"
+import { dispatchWebhook } from "@/lib/webhooks"
 import { getValidActivation } from "@/lib/activation"
 import { FREE_TURN_LIMIT, getFreeTurnsUsed, incrementFreeTurnsUsed } from "@/lib/turn-usage"
 import { type NextRequest } from "next/server"
@@ -172,6 +173,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           touchScenario(scenario.id)
           messages.push(message)
           send("message", message)
+          dispatchWebhook("message.created", { message })
         }
       }
 
@@ -179,7 +181,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         let intent: string | undefined
         let refusals: ConsentRefusal[] | undefined
         let memories: Memory[] | undefined
-        let shouldStreamReply = false
+        // Default: the chosen speaker streams a reply. The consent/move flow
+        // below flips this to false when it produced fulfillment or move
+        // messages that already serve as the speaker's reply.
+        let shouldStreamReply = true
 
         send("speaker", {
           kind: speaker.kind,
@@ -251,6 +256,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 touchScenario(scenario.id)
                 messages.push(intentMessage)
                 send("message", intentMessage)
+                dispatchWebhook("message.created", { message: intentMessage })
 
                 const targets = proposal.targetIds
                   .map((id) => characters.find((c) => c.id === id))
@@ -291,6 +297,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     touchScenario(scenario.id)
                     messages.push(consentMessage)
                     send("message", consentMessage)
+                    dispatchWebhook("message.created", { message: consentMessage })
                   }
 
                   if (decision.decision === "no") {
@@ -316,6 +323,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     consentedTargetIds,
                     signal: request.signal,
                   })
+                  shouldStreamReply = false
                   for (const fulfillerId of order) {
                     const fulfiller = characters.find((c) => c.id === fulfillerId)
                     if (!fulfiller) continue
@@ -341,6 +349,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     touchScenario(scenario.id)
                     messages.push(fulfillmentMessage)
                     send("message", fulfillmentMessage)
+                    dispatchWebhook("message.created", { message: fulfillmentMessage })
                   }
                   break
                 }
@@ -361,6 +370,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               }
 
               if (moveDestination) {
+                shouldStreamReply = false
                 const destination = moveDestination
                 const moveMessage = appendMessage({
                   scenarioId: scenario.id,
@@ -373,6 +383,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 touchScenario(scenario.id)
                 messages.push(moveMessage)
                 send("message", moveMessage)
+                dispatchWebhook("message.created", { message: moveMessage })
 
                 const companions = proposal.targetIds
                   .map((id) => characters.find((c) => c.id === id))
@@ -412,6 +423,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     touchScenario(scenario.id)
                     messages.push(consentMessage)
                     send("message", consentMessage)
+                    dispatchWebhook("message.created", { message: consentMessage })
                   }
 
                   if (decision.decision === "yes") consentingCompanionIds.push(companion.id)
@@ -427,6 +439,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     toLocationId: destination.id,
                     toLocationName: destination.name,
                   })
+                  dispatchWebhook("scenario.character_moved", {
+                    scenarioId: scenario.id,
+                    characterId: speakerId,
+                    locationId: destination.id,
+                  })
                 }
                 for (const companionId of consentingCompanionIds) {
                   const companion = characters.find((c) => c.id === companionId)
@@ -437,6 +454,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     fromLocationId: scenario.locationId,
                     toLocationId: destination.id,
                     toLocationName: destination.name,
+                  })
+                  dispatchWebhook("scenario.character_moved", {
+                    scenarioId: scenario.id,
+                    characterId: companionId,
+                    locationId: destination.id,
                   })
                 }
 

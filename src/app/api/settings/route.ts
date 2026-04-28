@@ -3,6 +3,7 @@ import { z } from "zod"
 import { LLM_BACKENDS } from "@/lib/llm/types"
 import { getSettings, updateSettings } from "@/lib/settings"
 import { TTS_BACKENDS } from "@/lib/tts/types"
+import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
 
@@ -27,5 +28,7 @@ export async function PUT(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
-  return NextResponse.json(updateSettings(parsed.data))
+  const settings = updateSettings(parsed.data)
+  dispatchWebhook("settings.updated", { changedKeys: Object.keys(parsed.data) })
+  return NextResponse.json(settings)
 }
