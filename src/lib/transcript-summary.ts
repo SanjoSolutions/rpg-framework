@@ -6,6 +6,7 @@ import { setScenarioTranscriptSummary, type Scenario } from "./scenarios"
 const logger = getLogger({ component: "transcript-summary" })
 
 export const RECENT_TRANSCRIPT_LIMIT = 10
+export const TRANSCRIPT_SUMMARY_TRIGGER = 20
 
 function formatMessageLine(m: Message): string {
   if (m.speakerKind === "narrator") return `${m.speakerName || "Narrator"}: ${m.content}`
@@ -30,8 +31,8 @@ export async function ensureTranscriptSummary(args: {
   signal?: AbortSignal
 }): Promise<string> {
   const { backend, scenario, messages, signal } = args
-  const olderCount = Math.max(0, messages.length - RECENT_TRANSCRIPT_LIMIT)
-  if (olderCount === 0) return ""
+  if (messages.length < TRANSCRIPT_SUMMARY_TRIGGER) return scenario.transcriptSummary
+  const olderCount = messages.length - RECENT_TRANSCRIPT_LIMIT
 
   const cachedSummary = scenario.transcriptSummary
   const cachedCount = scenario.transcriptSummaryCount
@@ -71,6 +72,8 @@ export async function ensureTranscriptSummary(args: {
   const text = await generateOnce({ backend, system, prompt, signal })
   const summary = text.trim()
   setScenarioTranscriptSummary(scenario.id, summary, olderCount)
+  scenario.transcriptSummary = summary
+  scenario.transcriptSummaryCount = olderCount
   logger.info(
     {
       scenarioId: scenario.id,

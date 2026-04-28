@@ -16,7 +16,6 @@ import {
 } from "./memories"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
-import { RECENT_TRANSCRIPT_LIMIT } from "./transcript-summary"
 
 function enumOf(values: readonly string[]) {
   return z.enum(values as [string, ...string[]])
@@ -190,7 +189,7 @@ function baseSceneBlock(
     sections.push(`## Earlier in the scene (summary)`, transcriptSummary)
   }
   if (messages !== null) {
-    const recent = messages.slice(-RECENT_TRANSCRIPT_LIMIT)
+    const recent = messages.slice(context.scenario.transcriptSummaryCount)
     sections.push(`## Recent transcript`, buildHistory(recent, aliases))
   }
   return sections.join("\n\n")
@@ -479,7 +478,7 @@ export async function proposeIntent(args: {
         ].join("\n")
       : `## Other known locations\n(roster pending; choose ${allowRequestConsent ? "SPEAK, ACT, or REQUEST_CONSENT" : "SPEAK or ACT"} this turn)`
 
-  const history: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
+  const history: ChatMessage[] = messages.slice(context.scenario.transcriptSummaryCount).map((m) => {
     if (m.speakerKind === "user") {
       return { role: "user", content: `${m.speakerName}: ${m.content}` }
     }
@@ -1134,7 +1133,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     .filter((s) => s.length > 0)
     .join("\n\n")
 
-  const chatMessages: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
+  const chatMessages: ChatMessage[] = messages.slice(context.scenario.transcriptSummaryCount).map((m) => {
     if (m.speakerKind === "user") {
       return { role: "user", content: `${m.speakerName}: ${m.content}` }
     }
