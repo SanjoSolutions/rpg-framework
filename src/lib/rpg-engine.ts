@@ -35,7 +35,9 @@ export interface SpeakerSelection {
 }
 
 export function stripLeadingSpeakerLabel(text: string): string {
-  return text.replace(/^\s*\[[^\]\n]{1,60}\]\s*:\s*/, "")
+  return text
+    .replace(/^\s*\[[^\]\n]{1,60}\]\s*:\s*/, "")
+    .replace(/^\s*[A-Z][\w .'-]{0,40}:\s+/, "")
 }
 
 function shiftMarkdownHeadings(text: string, minLevel: number): string {
@@ -130,13 +132,13 @@ function buildHistory(messages: Message[], aliases: Map<string, string> | null):
   if (messages.length === 0) return "(the scene begins here)"
   return messages
     .map((m) => {
-      if (m.speakerKind === "narrator") return `[${m.speakerName || "Narrator"}]: ${m.content}`
-      if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
+      if (m.speakerKind === "narrator") return `${m.speakerName || "Narrator"}: ${m.content}`
+      if (m.speakerKind === "user") return `Player ${m.speakerName}: ${m.content}`
       const label =
         aliases && m.speakerId && aliases.has(m.speakerId)
           ? aliases.get(m.speakerId)!
           : m.speakerName
-      return `[${label}]: ${m.content}`
+      return `${label}: ${m.content}`
     })
     .join("\n")
 }
@@ -193,10 +195,42 @@ function baseSceneBlock(
 }
 
 /**
- * Picks the next speaker without an LLM call. Extracts the names mentioned in
- * the most recent message (matching each eligible character's real name or
- * stranger name as a whole word) and rolls one of the mentions at random.
- * Falls back to a uniform pick over eligible characters when nothing matches.
+ * Share of the next-speaker probability mass reserved for characters that
+ * the latest message mentioned by name. The remaining mass goes to the
+ * other eligible characters, distributed by how long each has been silent.
+ */
+const MENTIONED_SHARE = 0.5
+
+/**
+ * Number of eligible character turns since `characterId` last spoke. Counts
+ * only character messages (skipping consent/fulfillment side-channel turns).
+ * Returns the full count when the character has yet to speak in `messages`.
+ */
+export function turnsSinceLastSpoke(characterId: string, messages: Message[]): number {
+  let count = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.speakerKind !== "character" || m.kind === "fulfillment" || m.kind === "consent") continue
+    if (m.speakerId === characterId) return count
+    count++
+  }
+  return count
+}
+
+function silenceWeights(chars: readonly Character[], messages: Message[]): number[] {
+  const raw = chars.map((c) => turnsSinceLastSpoke(c.id, messages) + 1)
+  const total = raw.reduce((a, b) => a + b, 0)
+  return raw.map((w) => w / total)
+}
+
+/**
+ * Picks the next speaker without an LLM call. When the latest message
+ * mentions one or more eligible characters, that group collectively
+ * receives `MENTIONED_SHARE` of the probability mass and the remaining
+ * eligible characters split the rest, weighted by how long each has been
+ * silent (`turnsSinceLastSpoke + 1`). When nothing is mentioned, or every
+ * eligible character is mentioned, the full mass is split among that one
+ * group on the same silence-weighted basis.
  */
 export async function pickNextSpeaker(args: {
   backend: LLMBackend
@@ -235,17 +269,33 @@ export async function pickNextSpeaker(args: {
   }
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
-  const mentioned: Character[] = []
+  const mentionedIds = new Set<string>()
   if (lastMessage) {
     const text = lastMessage.content
     for (const c of eligible) {
       const names = [c.name, c.strangerName].filter((n): n is string => Boolean(n?.trim()))
-      if (names.some((n) => mentionsOwnName(text, n))) mentioned.push(c)
+      if (names.some((n) => mentionsOwnName(text, n))) mentionedIds.add(c.id)
     }
   }
 
-  const pool = mentioned.length > 0 ? mentioned : eligible
-  const chosen = selectRandom(pool, args.rng)
+  const mentionedChars = eligible.filter((c) => mentionedIds.has(c.id))
+  const otherChars = eligible.filter((c) => !mentionedIds.has(c.id))
+
+  let pool: Character[]
+  let weights: number[]
+  if (mentionedChars.length === 0) {
+    pool = otherChars
+    weights = silenceWeights(otherChars, messages)
+  } else if (otherChars.length === 0) {
+    pool = mentionedChars
+    weights = silenceWeights(mentionedChars, messages)
+  } else {
+    pool = [...mentionedChars, ...otherChars]
+    const mentionedW = silenceWeights(mentionedChars, messages).map((w) => w * MENTIONED_SHARE)
+    const otherW = silenceWeights(otherChars, messages).map((w) => w * (1 - MENTIONED_SHARE))
+    weights = [...mentionedW, ...otherW]
+  }
+  const chosen = selectWeighted(pool, weights, args.rng)
   return { kind: "character", characterId: chosen.id, name: chosen.name }
 }
 
@@ -265,6 +315,26 @@ export function selectRandom<T>(items: readonly T[], rng: () => number = Math.ra
   if (items.length === 0) throw new Error("selectRandom: items must not be empty")
   const index = Math.floor(rng() * items.length) % items.length
   return items[index]
+}
+
+export function selectWeighted<T>(
+  items: readonly T[],
+  weights: readonly number[],
+  rng: () => number = Math.random,
+): T {
+  if (items.length === 0) throw new Error("selectWeighted: items must not be empty")
+  if (items.length !== weights.length) {
+    throw new Error("selectWeighted: items and weights length mismatch")
+  }
+  const total = weights.reduce((a, b) => a + b, 0)
+  if (total <= 0) return items[0]
+  const r = rng() * total
+  let cum = 0
+  for (let i = 0; i < items.length; i++) {
+    cum += weights[i]
+    if (r < cum) return items[i]
+  }
+  return items[items.length - 1]
 }
 
 export type IntentType = "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
@@ -389,17 +459,17 @@ export async function proposeIntent(args: {
 
   const history: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
     if (m.speakerKind === "user") {
-      return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
+      return { role: "user", content: `${m.speakerName}: ${m.content}` }
     }
     if (m.speakerKind === "narrator") {
-      return { role: "user", content: `[${m.speakerName || "Narrator"}]: ${m.content}` }
+      return { role: "user", content: `${m.speakerName || "Narrator"}: ${m.content}` }
     }
     if (m.speakerId === speaker.id) {
       return { role: "assistant", content: m.content }
     }
     const label =
       m.speakerId && aliases.has(m.speakerId) ? aliases.get(m.speakerId)! : m.speakerName
-    return { role: "user", content: `[${label}]: ${m.content}` }
+    return { role: "user", content: `${label}: ${m.content}` }
   })
 
   const prompt = [
@@ -498,9 +568,9 @@ export async function extractMemoriesFromTurn(args: {
 
   const transcript = recentMessages
     .map((m) => {
-      if (m.speakerKind === "narrator") return `[Narrator]: ${m.content}`
-      if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
-      return `[${m.speakerName}]: ${m.content}`
+      if (m.speakerKind === "narrator") return `Narrator: ${m.content}`
+      if (m.speakerKind === "user") return `Player ${m.speakerName}: ${m.content}`
+      return `${m.speakerName}: ${m.content}`
     })
     .join("\n")
 
@@ -597,9 +667,9 @@ export async function extractNameLearningsFromTurn(args: {
 
   const transcript = recentMessages
     .map((m) => {
-      if (m.speakerKind === "narrator") return `[Narrator]: ${m.content}`
-      if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
-      return `[${m.speakerName}]: ${m.content}`
+      if (m.speakerKind === "narrator") return `Narrator: ${m.content}`
+      if (m.speakerKind === "user") return `Player ${m.speakerName}: ${m.content}`
+      return `${m.speakerName}: ${m.content}`
     })
     .join("\n")
 
@@ -1059,10 +1129,10 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
 
   const chatMessages: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
     if (m.speakerKind === "user") {
-      return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
+      return { role: "user", content: `${m.speakerName}: ${m.content}` }
     }
     if (m.speakerKind === "narrator") {
-      return { role: "user", content: `[${m.speakerName || "Narrator"}]: ${m.content}` }
+      return { role: "user", content: `${m.speakerName || "Narrator"}: ${m.content}` }
     }
     if (character && m.speakerId === character.id) {
       return { role: "assistant", content: m.content }
@@ -1071,7 +1141,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       aliases && m.speakerId && aliases.has(m.speakerId)
         ? aliases.get(m.speakerId)!
         : m.speakerName
-    return { role: "user", content: `[${label}]: ${m.content}` }
+    return { role: "user", content: `${label}: ${m.content}` }
   })
 
   if (chatMessages.length === 0 || chatMessages.at(-1)?.role !== "user") {
@@ -1082,16 +1152,11 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     chatMessages.push({ role: "user", content: nudge })
   }
 
-  const prefill = character != null ? `[${character.name}]: ` : undefined
-  const stop = character != null ? ["\n["] : undefined
-
   await streamChat({
     backend: args.backend,
     system,
     messages: chatMessages,
     signal: args.signal,
     onText: args.onText,
-    prefill,
-    stop,
   })
 }
