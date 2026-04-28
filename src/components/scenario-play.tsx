@@ -78,9 +78,10 @@ export function ScenarioPlay({
   initialActiveLocationId,
   initialCharacterLocations,
 }: Props) {
-  const { voiceEnabled, setVoiceEnabled, ttsBackend } = useSettings()
+  const { voiceEnabled, setVoiceEnabled, ttsBackend, memoriesEnabled } = useSettings()
   const useBrowserTts = isBrowserTtsBackend(ttsBackend)
-  const { showRawMessages, showMemories, showRequestInternals } = useDevSidebar()
+  const { showRawMessages, showMemories: showMemoriesPref, showRequestInternals } = useDevSidebar()
+  const showMemories = showMemoriesPref && memoriesEnabled
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
   const [placement, setPlacement] = useState<Record<string, string | null>>(initialCharacterLocations)
