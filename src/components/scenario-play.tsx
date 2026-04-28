@@ -333,7 +333,9 @@ export function ScenarioPlay({
             const speakerName =
               characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
             const isRequest = p.type === "REQUEST_CONSENT"
-            setStatus(pickPhrase(intentPhase(p.type), speakerName))
+            const playful = pickPhrase(intentPhase(p.type), speakerName)
+            const intent = p.intent?.trim()
+            setStatus(intent ? `${playful} — ${intent}` : playful)
             if (isRequest && showRequestInternals) {
               enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
             }
