@@ -55,6 +55,87 @@ describe("pickNextSpeaker", () => {
     expect(speaker).toEqual({ kind: "character", characterId: "c1", name: "Aria" })
   })
 
+  it("picks a character mentioned by name in the most recent message", async () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const rex = makeCharacter("c3", "Rex")
+    const lastTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "character",
+      speakerId: aria.id,
+      speakerName: aria.name,
+      content: "I turn to Rex with a grin.",
+      kind: null,
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id, rex.id] },
+        location: null,
+        characters: [aria, jenny, rex],
+      },
+      messages: [lastTurn],
+      rng: () => 0,
+    })
+    expect(speaker).toEqual({ kind: "character", characterId: "c3", name: "Rex" })
+  })
+
+  it("matches stranger names when the message refers to a character by alias", async () => {
+    const aria = makeCharacter("c1", "Aria", "The Bard")
+    const jenny = makeCharacter("c2", "Jenny", "The Tavern Girl")
+    const rex = makeCharacter("c3", "Rex", "The Stranger in Black")
+    const lastTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "character",
+      speakerId: aria.id,
+      speakerName: aria.name,
+      content: "I nod toward The Stranger in Black.",
+      kind: null,
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id, rex.id] },
+        location: null,
+        characters: [aria, jenny, rex],
+      },
+      messages: [lastTurn],
+      rng: () => 0,
+    })
+    expect(speaker).toEqual({ kind: "character", characterId: "c3", name: "Rex" })
+  })
+
+  it("falls back to a uniform pick when no eligible character is mentioned", async () => {
+    const aria = makeCharacter("c1", "Aria")
+    const jenny = makeCharacter("c2", "Jenny")
+    const rex = makeCharacter("c3", "Rex")
+    const lastTurn: Message = {
+      id: "m1",
+      scenarioId: "s1",
+      speakerKind: "character",
+      speakerId: aria.id,
+      speakerName: aria.name,
+      content: "I stare at the fire in silence.",
+      kind: null,
+      createdAt: 1,
+    }
+    const speaker = await pickNextSpeaker({
+      backend: "grok",
+      context: {
+        scenario: { ...baseScenario, characterIds: [aria.id, jenny.id, rex.id] },
+        location: null,
+        characters: [aria, jenny, rex],
+      },
+      messages: [lastTurn],
+      rng: () => 0.99,
+    })
+    expect(speaker).toEqual({ kind: "character", characterId: "c3", name: "Rex" })
+  })
+
   it("excludes the most recent character speaker, picking the other when only two characters", async () => {
     const vixxen = makeCharacter("c1", "Vixxen")
     const jenny = makeCharacter("c2", "Jenny")

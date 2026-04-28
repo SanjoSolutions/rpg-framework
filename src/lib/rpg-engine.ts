@@ -192,6 +192,12 @@ function baseSceneBlock(
   return sections.join("\n\n")
 }
 
+/**
+ * Picks the next speaker without an LLM call. Extracts the names mentioned in
+ * the most recent message (matching each eligible character's real name or
+ * stranger name as a whole word) and rolls one of the mentions at random.
+ * Falls back to a uniform pick over eligible characters when nothing matches.
+ */
 export async function pickNextSpeaker(args: {
   backend: LLMBackend
   context: SceneContext
@@ -200,7 +206,7 @@ export async function pickNextSpeaker(args: {
   signal?: AbortSignal
   rng?: () => number
 }): Promise<SpeakerSelection> {
-  const { context, messages, summary } = args
+  const { context, messages } = args
 
   if (context.characters.length === 0) {
     return { kind: "narrator", characterId: null, name: "Narrator" }
@@ -228,47 +234,17 @@ export async function pickNextSpeaker(args: {
     return { kind: "character", characterId: only.id, name: only.name }
   }
 
-  const roster = eligible.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
-  const eligibleIds = eligible.map((c) => c.id)
-
-  const system = [
-    "You are the director of a collaborative roleplay scene.",
-    "Choose which of the listed characters should speak or act next, based on the recent transcript.",
-    "If exactly one character is the natural choice, return a single id in candidateIds.",
-    "If multiple characters could plausibly take the next turn, return all of their ids — one will be chosen at random.",
-  ].join(" ")
-
-  const prompt = [
-    baseSceneBlock(context, messages, { summary }),
-    "## Roster (eligible speakers)",
-    roster,
-    "Pick one or more eligible character ids.",
-  ].join("\n\n")
-
-  const schema = z.object({
-    candidateIds: z.array(enumOf(eligibleIds)).min(1),
-  })
-
-  const result = await generateObject({
-    backend: args.backend,
-    system,
-    prompt,
-    schema,
-    schemaName: "speakerCandidates",
-    signal: args.signal,
-  })
-
-  const seen = new Set<string>()
-  const candidates: Character[] = []
-  for (const id of result.candidateIds) {
-    if (seen.has(id)) continue
-    const c = eligible.find((e) => e.id === id)
-    if (c) {
-      seen.add(id)
-      candidates.push(c)
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
+  const mentioned: Character[] = []
+  if (lastMessage) {
+    const text = lastMessage.content
+    for (const c of eligible) {
+      const names = [c.name, c.strangerName].filter((n): n is string => Boolean(n?.trim()))
+      if (names.some((n) => mentionsOwnName(text, n))) mentioned.push(c)
     }
   }
-  const pool = candidates.length > 0 ? candidates : [eligible[0]]
+
+  const pool = mentioned.length > 0 ? mentioned : eligible
   const chosen = selectRandom(pool, args.rng)
   return { kind: "character", characterId: chosen.id, name: chosen.name }
 }
