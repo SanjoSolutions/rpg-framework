@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
 
 export default function Home() {
   return (
@@ -24,11 +23,6 @@ export default function Home() {
           <h2 className="font-semibold">Scenarios</h2>
           <p className="text-sm text-muted-foreground mt-1">Stage the story and play.</p>
         </Link>
-      </div>
-      <div>
-        <Button asChild>
-          <Link href="/scenarios/new">New scenario</Link>
-        </Button>
       </div>
     </div>
   )
