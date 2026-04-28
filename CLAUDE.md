@@ -2,6 +2,12 @@
 
 Guidance for Claude Code when working in this repository.
 
+## Principles
+
+* Follow DRY principle.
+* Follow SRP principle.
+* Highly prefer to write natural language class-inclusively: every sentence states positive class membership — what something IS, what belongs, what to do — using only affirmative content words. This rules out negation particles (no, never, not), privatives (without, lacking, absent), negation morphemes (un-, in-/im-, non-, dis-, a-, -less), and exclusionary verbs (avoid, skip, refrain, omit, exclude).
+
 ## What this is
 
 A local-only roleplay framework. The user defines characters, locations, and scenarios in the UI; the LLM drives what each character says and does, turn by turn. Single-user — no accounts, no remote storage, no auth.
