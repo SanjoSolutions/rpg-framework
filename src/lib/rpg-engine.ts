@@ -436,6 +436,7 @@ export async function proposeIntent(args: {
     "  • ACT — solo non-contact action: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon (without striking). Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
     "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); INVOLVES: NONE if you're going alone.",
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
+    "Any [Director] line in the transcript is authoritative out-of-character direction from the user steering the scene. Let it guide your TYPE and INTENT this turn.",
     "INVOLVES means: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent). Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them.",
     "Output strictly in this format and nothing else:",
     "TYPE: <REQUEST_CONSENT or SPEAK or ACT or MOVE>",
@@ -1023,6 +1024,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           ...otherCharactersRules,
           ...oneActionRule,
           "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
+          "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character — no acknowledgement, no meta reference to it.",
           `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
           "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
@@ -1093,7 +1095,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
     }
     if (m.speakerKind === "narrator") {
-      return { role: "user", content: `[Narrator]: ${m.content}` }
+      return { role: "user", content: `[${m.speakerName || "Narrator"}]: ${m.content}` }
     }
     if (character && m.speakerId === character.id) {
       return { role: "assistant", content: m.content }
