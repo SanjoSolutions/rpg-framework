@@ -1125,7 +1125,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const system = [
     character != null
       ? `You are ${character.name}, a character in a role play game.`
-      : "You are the narrator of a role play game.",
+      : "You are a character in a role play game.",
     characterBlock,
     sceneBlock,
     memoryBlock,
