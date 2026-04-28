@@ -93,6 +93,16 @@ export function ScenarioPlay({
   )
   const [busy, setBusy] = useState(false)
   const [running, setRunning] = useState(false)
+  const [showLocations, setShowLocations] = useState(true)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = window.localStorage.getItem("rpg.showLocations")
+    if (stored !== null) setShowLocations(stored === "1")
+  }, [])
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem("rpg.showLocations", showLocations ? "1" : "0")
+  }, [showLocations])
   const runningRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
@@ -515,17 +525,6 @@ export function ScenarioPlay({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {attachedLocations.length > 0 && (
-        <LocationsBar
-          locations={attachedLocations}
-          characters={characters}
-          activeLocationId={activeLocationId}
-          locationOf={locationOf}
-          onActivate={switchActiveScene}
-          onMove={moveCharacter}
-          disabled={busy}
-        />
-      )}
       <div className="flex flex-1 min-h-0">
         <div ref={transcriptRef} className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-3">
           {messages.length === 0 && !pendingTurn && (
@@ -558,6 +557,20 @@ export function ScenarioPlay({
         {showMemories && (
           <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">
             <SceneMemoriesPanel groups={sceneMemories} nameById={memoryNameById} />
+          </aside>
+        )}
+        {showLocations && attachedLocations.length > 0 && (
+          <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">
+            <LocationsPanel
+              locations={attachedLocations}
+              characters={characters}
+              activeLocationId={activeLocationId}
+              locationOf={locationOf}
+              onActivate={switchActiveScene}
+              onMove={moveCharacter}
+              disabled={busy}
+              onClose={() => setShowLocations(false)}
+            />
           </aside>
         )}
       </div>
@@ -602,6 +615,16 @@ export function ScenarioPlay({
             <Button type="button" variant="outline" size="sm" onClick={clearTranscript} disabled={busy}>
               Clear
             </Button>
+            {attachedLocations.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLocations((v) => !v)}
+              >
+                {showLocations ? "Hide locations" : "Show locations"}
+              </Button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {running || busy ? (
@@ -630,7 +653,7 @@ export function ScenarioPlay({
   )
 }
 
-function LocationsBar({
+function LocationsPanel({
   locations,
   characters,
   activeLocationId,
@@ -638,6 +661,7 @@ function LocationsBar({
   onActivate,
   onMove,
   disabled,
+  onClose,
 }: {
   locations: Location[]
   characters: Character[]
@@ -646,6 +670,7 @@ function LocationsBar({
   onActivate: (locationId: string) => void
   onMove: (characterId: string, locationId: string) => void
   disabled: boolean
+  onClose: () => void
 }) {
   const moveOptions = locations.filter((l) => l.id !== activeLocationId)
   const charactersAt = (locationId: string) =>
@@ -656,14 +681,25 @@ function LocationsBar({
       return lid === locationId
     })
   return (
-    <div className="border-b border-border px-6 py-2 flex flex-wrap gap-2 items-start">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-muted-foreground">Locations</div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[10px] underline text-muted-foreground hover:text-foreground"
+          aria-label="Hide locations panel"
+        >
+          hide
+        </button>
+      </div>
       {locations.map((loc) => {
         const here = charactersAt(loc.id)
         const active = loc.id === activeLocationId
         return (
           <div
             key={loc.id}
-            className={`rounded-md border px-3 py-2 text-xs flex flex-col gap-1 min-w-[140px] ${
+            className={`rounded-md border px-3 py-2 text-xs flex flex-col gap-1 ${
               active ? "border-primary bg-primary/5" : "border-border bg-muted/30"
             }`}
           >
