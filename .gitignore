@@ -76,6 +76,9 @@ data/lora-datasets/*/candidates/
 electron/dist/
 dist-electron/
 
+# SEA build output
+/dist/
+
 # environment / init dotfiles
 .bash_profile
 .bashrc

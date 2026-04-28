@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:sea": "node scripts/build-sea.mjs"
   },
   "dependencies": {
     "@ai-sdk/xai": "^3.0.57",
@@ -42,6 +43,7 @@
     "eslint-config-next": "16.1.6",
     "jsdom": "^28.1.0",
     "pino-pretty": "^13.1.3",
+    "postject": "1.0.0-alpha.6",
     "shadcn": "^3.8.4",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
