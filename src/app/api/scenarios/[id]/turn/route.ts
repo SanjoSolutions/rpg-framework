@@ -5,7 +5,7 @@ import {
   type KnowledgeView,
 } from "@/lib/acquaintances"
 import { getCharacter } from "@/lib/characters"
-import type { LLMBackend } from "@/lib/llm"
+import { MAX_HISTORY_MESSAGES, type LLMBackend } from "@/lib/llm"
 import type { Location } from "@/lib/locations"
 import { getLocation } from "@/lib/locations"
 import { getLogger } from "@/lib/logger"
@@ -456,7 +456,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
         const postTasks: Promise<unknown>[] = []
 
-        if (memoriesEnabled && speaker.kind === "character" && speaker.characterId) {
+        if (
+          memoriesEnabled &&
+          speaker.kind === "character" &&
+          speaker.characterId &&
+          messages.length > 0 &&
+          messages.length % MAX_HISTORY_MESSAGES === 0
+        ) {
           const speakerCharacter = characters.find((c) => c.id === speaker.characterId)
           if (speakerCharacter) {
             postTasks.push(

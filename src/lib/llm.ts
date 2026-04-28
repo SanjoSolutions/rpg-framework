@@ -5,7 +5,7 @@ import { getLogger } from "./logger"
 const GROK_MODEL = "grok-4-1-fast-non-reasoning"
 const DEFAULT_NEMOMIX_URL = "http://localhost:11434"
 const NEMOMIX_MODEL_NAME = "nemomix-unleashed-12b"
-const MAX_HISTORY_MESSAGES = 30
+export const MAX_HISTORY_MESSAGES = 30
 
 const logger = getLogger({ component: "llm" })
 
