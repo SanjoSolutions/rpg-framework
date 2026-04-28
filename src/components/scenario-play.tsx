@@ -96,7 +96,7 @@ export function ScenarioPlay({
     { characterId: string; characterName: string; memories: Memory[] }[]
   >([])
   const [memoryNameById, setMemoryNameById] = useState<Record<string, string>>({})
-  const abortRef = useRef<AbortController | null>(null)
+  const abortsRef = useRef<Set<AbortController>>(new Set())
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -154,9 +154,10 @@ export function ScenarioPlay({
   }, [])
 
   useEffect(() => {
+    const aborts = abortsRef.current
     return () => {
-      abortRef.current?.abort()
-      abortRef.current = null
+      for (const c of aborts) c.abort()
+      aborts.clear()
       sentenceSpeakerRef.current = null
       // Invalidate any queued voice plays — captured token will mismatch.
       ttsTokenRef.current = NaN
@@ -229,18 +230,24 @@ export function ScenarioPlay({
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages, pendingTurn])
 
-  async function generateTurn() {
+  async function generateTurn(opts: { onVisibleDone?: () => void } = {}) {
     if (!hasCharacters) {
       setError("Add at least one character to this scenario before generating a turn.")
+      opts.onVisibleDone?.()
       return
     }
     setError(null)
     setBusy(true)
     setPendingTurn(null)
-    resetTtsQueue()
     const myGen = ++turnGenRef.current
     const controller = new AbortController()
-    abortRef.current = controller
+    abortsRef.current.add(controller)
+    let visibleDoneFired = false
+    const fireVisibleDone = () => {
+      if (visibleDoneFired) return
+      visibleDoneFired = true
+      opts.onVisibleDone?.()
+    }
     try {
       const res = await fetch(`/api/scenarios/${scenarioId}/turn`, {
         method: "POST",
@@ -351,8 +358,11 @@ export function ScenarioPlay({
             // and name-learning extraction still finish in the background.
             if (turnGenRef.current === myGen) {
               setBusy(false)
-              if (abortRef.current === controller) abortRef.current = null
             }
+          } else if (event === "done") {
+            // Visible work is done — let the auto-loop start the next turn
+            // while post-tasks (memory/name extraction) finish on this stream.
+            fireVisibleDone()
           } else if (event === "memory_learned") {
             if (showMemories) refreshSceneMemories()
           } else if (event === "character_moved") {
@@ -364,16 +374,20 @@ export function ScenarioPlay({
         }
       }
     } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") return
+      if ((err as { name?: string }).name === "AbortError") {
+        fireVisibleDone()
+        return
+      }
       if (turnGenRef.current === myGen) {
         setError(err instanceof Error ? err.message : "Turn failed")
       }
     } finally {
+      abortsRef.current.delete(controller)
       if (turnGenRef.current === myGen) {
-        if (abortRef.current === controller) abortRef.current = null
         setBusy(false)
         setPendingTurn(null)
       }
+      fireVisibleDone()
     }
   }
 
@@ -402,14 +416,15 @@ export function ScenarioPlay({
       return
     }
     setBusy(false)
+    resetTtsQueue()
     void generateTurn()
   }
 
   function stop() {
     runningRef.current = false
     setRunning(false)
-    abortRef.current?.abort()
-    abortRef.current = null
+    for (const c of abortsRef.current) c.abort()
+    abortsRef.current.clear()
     setBusy(false)
     setPendingTurn(null)
     sentenceSpeakerRef.current = null
@@ -427,14 +442,18 @@ export function ScenarioPlay({
   async function startLoop() {
     if (runningRef.current) return
     if (!hasCharacters) return
+    resetTtsQueue()
     runningRef.current = true
     setRunning(true)
     while (runningRef.current && hasCharacters) {
-      await generateTurn()
-      if (!runningRef.current) break
-      // Wait for queued TTS to finish so the next turn doesn't preempt the
-      // tail of the previous turn's audio (e.g., a fulfillment line).
-      await ttsChainRef.current.catch(() => {})
+      // Resume the loop as soon as the previous turn's user-visible
+      // messages have landed. The previous SSE stream keeps running for
+      // post-task events (memory + name extraction); meanwhile the next
+      // turn's pickNextSpeaker / proposeIntent / consent calls happen in
+      // parallel with TTS playback of the previous message.
+      await new Promise<void>((resolve) => {
+        void generateTurn({ onVisibleDone: resolve })
+      })
       if (!runningRef.current) break
     }
     runningRef.current = false

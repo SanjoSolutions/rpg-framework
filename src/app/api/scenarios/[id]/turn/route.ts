@@ -18,7 +18,6 @@ import {
 import { appendMessage, listMessages } from "@/lib/messages"
 import {
   extractMemoriesFromTurn,
-  extractMovementsFromTurn,
   extractNameLearningsFromTurn,
   generateFulfillmentMessage,
   pickFulfillers,
@@ -547,44 +546,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           }
         }
 
-        if (otherLocations.length > 0 && characters.length > 0) {
-          postTasks.push(
-            (async () => {
-              try {
-                const recent = messages.slice(-4)
-                const movements = await extractMovementsFromTurn({
-                  backend,
-                  context,
-                  recentMessages: recent,
-                  destinations: otherLocations,
-                  signal: request.signal,
-                })
-                for (const m of movements) {
-                  const ok = setCharacterLocation(scenario.id, m.characterId, m.destinationLocationId)
-                  if (!ok) continue
-                  const character = characters.find((c) => c.id === m.characterId)
-                  const destination = otherLocations.find((l) => l.id === m.destinationLocationId)
-                  send("character_moved", {
-                    characterId: m.characterId,
-                    characterName: character?.name ?? null,
-                    fromLocationId: scenario.locationId,
-                    toLocationId: m.destinationLocationId,
-                    toLocationName: destination?.name ?? null,
-                  })
-                }
-              } catch (err) {
-                logger.warn(
-                  { err: err instanceof Error ? err.message : String(err) },
-                  "movement extraction failed",
-                )
-              }
-            })(),
-          )
-        }
+        // Emit done as soon as all user-visible work is finished so the
+        // client can start the next turn while post-tasks (memory + name
+        // extraction) keep running in the background. The SSE stream stays
+        // open below so memory_learned / name_learned events still reach
+        // the client when those background calls finish.
+        send("done", {})
 
         if (postTasks.length > 0) await Promise.allSettled(postTasks)
-
-        send("done", {})
       } catch (error) {
         send("error", { message: error instanceof Error ? error.message : String(error) })
       } finally {
