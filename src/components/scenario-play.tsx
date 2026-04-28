@@ -347,10 +347,12 @@ export function ScenarioPlay({
               sentenceSpeakerRef.current = null
             } else if (voiceEnabled && message.speakerKind === "character") {
               // Request/Consented/Refused already played (or skipped) by the
-              // labeled enqueue paths above; everything else (Move, fulfillment,
-              // long prose) plays here.
+              // labeled enqueue paths above. Fulfillment is gated on the same
+              // internals toggle as the rest of the consent protocol.
               const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
-              if (!isLabeled) {
+              const isFulfillment = message.kind === "fulfillment"
+              const skip = isLabeled || (isFulfillment && !showRequestInternals)
+              if (!skip) {
                 enqueueVoice(message.speakerId, message.content, speakerPrefix(message.speakerId))
               }
             }
@@ -631,8 +633,7 @@ function LocationsBar({
                 <button
                   type="button"
                   onClick={() => onActivate(loc.id)}
-                  disabled={disabled}
-                  className="text-[10px] underline text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  className="text-[10px] underline text-muted-foreground hover:text-foreground"
                 >
                   switch here
                 </button>
