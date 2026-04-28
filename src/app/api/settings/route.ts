@@ -10,6 +10,8 @@ const settingsSchema = z.object({
   llmBackend: z.enum(LLM_BACKENDS).optional(),
   ttsBackend: z.enum(TTS_BACKENDS).optional(),
   xaiApiKey: z.string().max(500).optional(),
+  ollamaUrl: z.string().max(500).optional(),
+  ollamaModel: z.string().max(200).optional(),
   requireConsent: z.boolean().optional(),
   memoriesEnabled: z.boolean().optional(),
   learnNames: z.boolean().optional(),

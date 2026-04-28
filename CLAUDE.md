@@ -12,6 +12,10 @@ Guidance for Claude Code when working in this repository.
 
 A local-only roleplay framework. The user defines characters, locations, and scenarios in the UI; the LLM drives what each character says and does, turn by turn. Single-user — no accounts, no remote storage, no auth.
 
+## Audience
+
+The app targets less-technical users. Configuration belongs in the settings UI (persisted to SQLite), not environment variables or config files. Reach for an env var only when the value is genuinely a deployment concern (e.g. `RPG_DB_PATH`); user-facing knobs like API keys, server URLs, and model names live on the settings page.
+
 ## Commands
 
 ```bash
@@ -36,9 +40,11 @@ Schema changes happen by editing the inline `applySchema` block in `src/lib/db.t
 ## LLM backends
 
 - `grok` — xAI Grok via `@ai-sdk/xai`. Requires `XAI_API_KEY`.
-- `nemomix-local` — local OpenAI-compatible server (Ollama / llama.cpp) running NemoMix-Unleashed-12B. URL via `NEMOMIX_LOCAL_URL` (default `http://localhost:11434`).
+- `ollama` — local Ollama server (OpenAI-compatible endpoint). Server URL and model name are set on the settings page and persisted to SQLite.
 
-Backend selection is global and chosen in `/settings`. Strategies live under `src/lib/llm/` (one file per backend, registered in `src/lib/llm/index.ts`).
+Backend selection is global and chosen in `/settings`. Each backend lives in its own subdirectory under `src/lib/llm/<backend>/` containing `strategy.ts` (server-side strategy) and, when the backend needs configuration, `settings.tsx` (client-side settings component). Strategies are registered in `src/lib/llm/index.ts` and settings components in `src/lib/llm/settings-ui.tsx`.
+
+The settings page renders the active backend's settings component grouped inside the backend's card via `<LlmBackendSettings>`. The same convention applies to TTS (`src/lib/tts/<backend>/strategy.ts` + `settings.tsx` + `settings-ui.tsx`). Per-backend fields persist through `/api/settings`; the cross-cutting `useSettings` hook stays focused on global backend selection and feature toggles.
 
 ## Voice
 

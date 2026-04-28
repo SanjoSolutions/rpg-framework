@@ -1,6 +1,6 @@
-import { getLogger } from "../logger"
-import { getXaiApiKey } from "../xai-credentials"
-import type { TtsStrategy, TtsSynthesizeArgs } from "./types"
+import { getLogger } from "../../logger"
+import { getXaiApiKey } from "../../xai-credentials"
+import type { TtsStrategy, TtsSynthesizeArgs } from "../types"
 
 const logger = getLogger({ component: "tts", strategy: "xai" })
 

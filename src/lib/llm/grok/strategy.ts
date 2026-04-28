@@ -1,7 +1,7 @@
 import { createXai, xai as defaultXai } from "@ai-sdk/xai"
 import { generateText, streamText } from "ai"
-import { getXaiApiKey } from "../xai-credentials"
-import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "./types"
+import { getXaiApiKey } from "../../xai-credentials"
+import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "../types"
 
 const GROK_MODEL = "grok-4-1-fast-non-reasoning"
 

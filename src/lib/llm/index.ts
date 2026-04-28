@@ -1,6 +1,6 @@
 import { getLogger } from "../logger"
-import { grokStrategy } from "./grok"
-import { nemomixStrategy } from "./nemomix"
+import { grokStrategy } from "./grok/strategy"
+import { ollamaStrategy } from "./ollama/strategy"
 import {
   MAX_HISTORY_MESSAGES,
   type ChatMessage,
@@ -17,7 +17,7 @@ const logger = getLogger({ component: "llm" })
 
 const STRATEGIES: Record<LLMBackend, LLMStrategy> = {
   grok: grokStrategy,
-  "nemomix-local": nemomixStrategy,
+  ollama: ollamaStrategy,
 }
 
 export function getLLMStrategy(backend: LLMBackend): LLMStrategy {

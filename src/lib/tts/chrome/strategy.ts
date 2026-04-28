@@ -1,4 +1,4 @@
-import type { TtsStrategy } from "./types"
+import type { TtsStrategy } from "../types"
 
 export const chromeTtsStrategy: TtsStrategy = {
   name: "chrome",

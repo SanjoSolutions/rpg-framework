@@ -6,6 +6,8 @@ export interface AppSettings {
   llmBackend: LLMBackend
   ttsBackend: TtsBackend
   xaiApiKey: string
+  ollamaUrl: string
+  ollamaModel: string
   requireConsent: boolean
   memoriesEnabled: boolean
   learnNames: boolean
@@ -15,12 +17,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmBackend: "grok",
   ttsBackend: "xai",
   xaiApiKey: "",
+  ollamaUrl: "http://localhost:11434",
+  ollamaModel: "",
   requireConsent: false,
   memoriesEnabled: false,
   learnNames: false,
 }
 
 function parseLlmBackend(value: string | undefined): LLMBackend {
+  if (value === "nemomix-local") return "ollama"
   return LLM_BACKENDS.includes(value as LLMBackend)
     ? (value as LLMBackend)
     : DEFAULT_SETTINGS.llmBackend
@@ -52,12 +57,14 @@ export function getSettings(): AppSettings {
   const llmBackend = map.has("llmBackend")
     ? parseLlmBackend(map.get("llmBackend"))
     : legacyUseLocalLlm
-      ? "nemomix-local"
+      ? "ollama"
       : DEFAULT_SETTINGS.llmBackend
   return {
     llmBackend,
     ttsBackend: parseTtsBackend(map.get("ttsBackend")),
     xaiApiKey: map.get("xaiApiKey") ?? "",
+    ollamaUrl: map.get("ollamaUrl") ?? DEFAULT_SETTINGS.ollamaUrl,
+    ollamaModel: map.get("ollamaModel") ?? DEFAULT_SETTINGS.ollamaModel,
     requireConsent: map.get("requireConsent") === "true",
     memoriesEnabled: map.get("memoriesEnabled") === "true",
     learnNames: map.get("learnNames") === "true",
@@ -77,6 +84,12 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.xaiApiKey !== undefined) {
     stmt.run("xaiApiKey", patch.xaiApiKey)
+  }
+  if (patch.ollamaUrl !== undefined) {
+    stmt.run("ollamaUrl", patch.ollamaUrl)
+  }
+  if (patch.ollamaModel !== undefined) {
+    stmt.run("ollamaModel", patch.ollamaModel)
   }
   if (patch.requireConsent !== undefined) {
     stmt.run("requireConsent", String(patch.requireConsent))

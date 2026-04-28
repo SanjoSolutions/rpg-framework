@@ -1,17 +1,23 @@
-import { getLogger } from "../logger"
-import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "./types"
+import { getLogger } from "../../logger"
+import { getSettings } from "../../settings"
+import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "../types"
 
-const DEFAULT_NEMOMIX_URL = "http://localhost:11434"
-const NEMOMIX_MODEL_NAME = "nemomix-unleashed-12b"
-
-const logger = getLogger({ component: "llm", strategy: "nemomix-local" })
+const logger = getLogger({ component: "llm", strategy: "ollama" })
 
 function getBaseUrl(): string {
-  return (process.env.NEMOMIX_LOCAL_URL ?? DEFAULT_NEMOMIX_URL).replace(/\/$/, "")
+  const url = getSettings().ollamaUrl.trim()
+  if (!url) throw new Error("Ollama URL is required — configure it on the settings page.")
+  return url.replace(/\/$/, "")
 }
 
-export const nemomixStrategy: LLMStrategy = {
-  name: "nemomix-local",
+function getModel(): string {
+  const model = getSettings().ollamaModel.trim()
+  if (!model) throw new Error("Ollama model is required — configure it on the settings page.")
+  return model
+}
+
+export const ollamaStrategy: LLMStrategy = {
+  name: "ollama",
 
   async streamChat(args: StreamChatArgs): Promise<void> {
     const apiMessages = [
@@ -28,7 +34,7 @@ export const nemomixStrategy: LLMStrategy = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: NEMOMIX_MODEL_NAME,
+        model: getModel(),
         messages: apiMessages,
         stream: true,
         temperature: 0.85,
@@ -40,8 +46,8 @@ export const nemomixStrategy: LLMStrategy = {
 
     if (!response.ok || !response.body) {
       const body = await response.text().catch(() => "")
-      logger.error({ status: response.status, body }, "NemoMix request failed")
-      throw new Error(`NemoMix server ${response.status}: ${body}`)
+      logger.error({ status: response.status, body }, "Ollama request failed")
+      throw new Error(`Ollama server ${response.status}: ${body}`)
     }
 
     const reader = response.body.getReader()
@@ -90,7 +96,7 @@ export const nemomixStrategy: LLMStrategy = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: NEMOMIX_MODEL_NAME,
+        model: getModel(),
         messages,
         stream: false,
         temperature: 0.7,
@@ -100,7 +106,7 @@ export const nemomixStrategy: LLMStrategy = {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "")
-      throw new Error(`NemoMix server ${response.status}: ${body}`)
+      throw new Error(`Ollama server ${response.status}: ${body}`)
     }
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
     return (data.choices?.[0]?.message?.content ?? "").trim()

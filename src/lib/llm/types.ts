@@ -1,11 +1,11 @@
 export const MAX_HISTORY_MESSAGES = 30
 
-export const LLM_BACKENDS = ["grok", "nemomix-local"] as const
+export const LLM_BACKENDS = ["grok", "ollama"] as const
 export type LLMBackend = (typeof LLM_BACKENDS)[number]
 
 export const LLM_BACKEND_LABELS: Record<LLMBackend, string> = {
   grok: "xAI Grok (cloud)",
-  "nemomix-local": "NemoMix-Unleashed-12B (local)",
+  ollama: "Ollama (local)",
 }
 
 export interface ChatMessage {
