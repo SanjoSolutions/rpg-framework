@@ -4,7 +4,7 @@ import path from "path"
 export default defineConfig({
   test: {
     environment: "node",
-    exclude: ["node_modules/**", ".next/**"],
+    exclude: ["node_modules/**", ".next/**", "dist/**", "e2e/**"],
   },
   resolve: {
     alias: {
