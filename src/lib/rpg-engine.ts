@@ -1,5 +1,12 @@
 import { z } from "zod"
 import type { Character } from "./characters"
+import {
+  generateObject,
+  generateOnce,
+  streamChat,
+  type ChatMessage,
+  type LLMBackend,
+} from "./llm"
 import type { Location } from "./locations"
 import {
   extractReferencedCharacterIds,
@@ -10,13 +17,6 @@ import {
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
 import { RECENT_TRANSCRIPT_LIMIT } from "./transcript-summary"
-import {
-  generateObject,
-  generateOnce,
-  streamChat,
-  type ChatMessage,
-  type LLMBackend,
-} from "./llm"
 
 function enumOf(values: readonly string[]) {
   return z.enum(values as [string, ...string[]])
@@ -1122,10 +1122,12 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           "Stay focused on observable scene-level events.",
         ].join("\n")
 
-  const system = [
-    character != null
+  const primer = (character != null
       ? `You are ${character.name}, a character in a role play game.`
-      : "You are a character in a role play game.",
+      : "You are a character in a role play game.") + "  Write your turn as a single short paragraph in first person present tense. Example shape: 'I tighten my grip on the hilt. \"Wait,\" I say.'"
+
+  const system = [
+    primer,
     characterBlock,
     sceneBlock,
     memoryBlock,
@@ -1152,24 +1154,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     return { role: "user", content: `${label}: ${m.content}` }
   })
 
-  if (character != null) {
-    const lastOwnReply = [...messages]
-      .reverse()
-      .find((m) => m.speakerKind === "character" && m.speakerId === character.id)
-    const ranLong = lastOwnReply ? /\n\s*\n/.test(lastOwnReply.content.trim()) : false
-    const directives = [
-      "Your turn. Reply in first person as your character — bare prose, beginning with your first word of speech or narration.",
-      "The transcript labels your turn for you; your reply opens with that first word of speech or action itself.",
-      "Stop the moment another character would take their own beat — their dialogue, their actions, their reactions all belong to their own turn.",
-      "Each turn is one short beat — a few sentences, a single paragraph at most. Speak or act, then stop and let the next character respond.",
-      ...otherCharactersDirective,
-      ...oneActionDirective,
-      ranLong ? "Your previous turn ran long. Tighten this one to a single short paragraph." : "",
-    ].filter(Boolean)
-    chatMessages.push({ role: "user", content: `(${directives.join(" ")})` })
-  } else {
-    chatMessages.push({ role: "user", content: "(Continue the scene — your turn.)" })
-  }
+  chatMessages.push({ role: "user", content: "(" + primer + ")" })
 
   await streamChat({
     backend: args.backend,
