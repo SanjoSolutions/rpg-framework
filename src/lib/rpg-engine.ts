@@ -1057,6 +1057,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const ruleLines =
     character != null
       ? [
+          `The user voices every other character${otherAliases.length > 0 ? ` (${othersList})` : ""} and the narrator. Their messages arrive prefixed with the speaker's name. Treat each speaker as their own autonomous character — own goals, own personality from the cast above — that the user happens to be playing; never collapse them into a single "user" voice or assume they speak for one another.`,
           "Each turn is one short beat — a few sentences at most. Speak or act, then stop and let the next character respond.",
           ...otherCharactersRules,
           ...oneActionRule,
@@ -1118,6 +1119,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       : [
           `# Rules`,
           "You are the omniscient narrator of the scene.",
+          "The user voices every character in the cast above. Their messages arrive prefixed with the speaker's name; treat each as their own autonomous character.",
           "Describe what happens next: setting changes, atmosphere, brief actions of present characters.",
           "Keep it short. Leave dialogue to the characters themselves.",
           "Stay focused on observable scene-level events.",

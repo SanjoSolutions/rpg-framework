@@ -8,9 +8,9 @@ const logger = getLogger({ component: "transcript-summary" })
 export const RECENT_TRANSCRIPT_LIMIT = 10
 
 function formatMessageLine(m: Message): string {
-  if (m.speakerKind === "narrator") return `[${m.speakerName || "Narrator"}]: ${m.content}`
-  if (m.speakerKind === "user") return `[Player ${m.speakerName}]: ${m.content}`
-  return `[${m.speakerName}]: ${m.content}`
+  if (m.speakerKind === "narrator") return `${m.speakerName || "Narrator"}: ${m.content}`
+  if (m.speakerKind === "user") return `Player ${m.speakerName}: ${m.content}`
+  return `${m.speakerName}: ${m.content}`
 }
 
 export function recentMessages(messages: Message[]): Message[] {
