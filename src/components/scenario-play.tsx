@@ -84,7 +84,6 @@ export function ScenarioPlay({
   const [input, setInput] = useState("")
   const [messageRole, setMessageRole] = useState<"director" | "participant">("director")
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
-  const [pendingAttempts, setPendingAttempts] = useState<AttemptUI[]>([])
   const [messageConsents, setMessageConsents] = useState<Record<string, AttemptUI[]>>(() =>
     seedMessageConsents(initialMessageMeta),
   )
@@ -101,11 +100,9 @@ export function ScenarioPlay({
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
-  const pendingAttemptsRef = useRef<AttemptUI[]>([])
   const turnGenRef = useRef(0)
   const ttsChainRef = useRef<Promise<unknown>>(Promise.resolve())
   const ttsTokenRef = useRef(0)
-  const experimentalRef = useRef(false)
 
   function locationOf(characterId: string): string | null {
     if (Object.prototype.hasOwnProperty.call(placement, characterId)) {
@@ -240,10 +237,7 @@ export function ScenarioPlay({
     setError(null)
     setBusy(true)
     setPendingTurn(null)
-    setPendingAttempts([])
-    pendingAttemptsRef.current = []
     resetTtsQueue()
-    experimentalRef.current = false
     const myGen = ++turnGenRef.current
     const controller = new AbortController()
     abortRef.current = controller
@@ -293,65 +287,17 @@ export function ScenarioPlay({
             }
             const speakerName =
               characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
-            if (!experimentalRef.current) {
-              const newAttempt: AttemptUI = {
-                intent: { speakerName, intent: p.intent },
-                consents: [],
-              }
-              pendingAttemptsRef.current = [...pendingAttemptsRef.current, newAttempt]
-              setPendingAttempts(pendingAttemptsRef.current)
-            }
             const isRequest = p.type === "REQUEST_CONSENT"
             if (isRequest && showRequestInternals) {
               enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
             }
           } else if (event === "consent_request") {
-            if (!experimentalRef.current) {
-              const p = payload as {
-                targetId: string
-                targetName: string
-                speakerName: string
-                intent: string
-              }
-              const entry: ConsentEvent = {
-                id: p.targetId,
-                targetName: p.targetName,
-                speakerName: p.speakerName,
-                intent: p.intent,
-                decision: null,
-                feedback: null,
-              }
-              const lastIndex = pendingAttemptsRef.current.length - 1
-              if (lastIndex >= 0) {
-                pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
-                  i === lastIndex ? { ...a, consents: [...a.consents, entry] } : a,
-                )
-                setPendingAttempts(pendingAttemptsRef.current)
-              }
-            }
+            // No live UI update; the discrete consent message renders the response.
           } else if (event === "consent_response") {
             const p = payload as {
               characterId: string
               decision: "yes" | "no"
               feedback: string
-            }
-            if (!experimentalRef.current) {
-              const lastIndex = pendingAttemptsRef.current.length - 1
-              if (lastIndex >= 0) {
-                pendingAttemptsRef.current = pendingAttemptsRef.current.map((a, i) =>
-                  i === lastIndex
-                    ? {
-                        ...a,
-                        consents: a.consents.map((c) =>
-                          c.id === p.characterId
-                            ? { ...c, decision: p.decision, feedback: p.feedback }
-                            : c,
-                        ),
-                      }
-                    : a,
-                )
-                setPendingAttempts(pendingAttemptsRef.current)
-              }
             }
             if (showRequestInternals) {
               const target = characters.find((c) => c.id === p.characterId)
@@ -360,17 +306,15 @@ export function ScenarioPlay({
               enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
             }
           } else if (event === "speaker") {
-            const p = payload as SpeakerInfo & { experimental?: boolean }
-            experimentalRef.current = !!p.experimental
+            const p = payload as SpeakerInfo
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
-            if (!experimentalRef.current) setPendingTurn(speaker)
+            setPendingTurn(speaker)
             sentenceSpeakerRef.current = null
             if (
               voiceEnabled &&
               serverTtsAvailable === false &&
               p.kind === "character" &&
-              p.characterId &&
-              !experimentalRef.current
+              p.characterId
             ) {
               const character = characters.find((c) => c.id === p.characterId)
               if (character?.voice) {
@@ -389,37 +333,18 @@ export function ScenarioPlay({
             sentenceSpeakerRef.current?.push(next.content)
           } else if (event === "message") {
             const message = payload as Message
-            const capturedAttempts = pendingAttemptsRef.current
             setMessages((current) => [...current, message])
             setPendingTurn(null)
-            if (capturedAttempts.length > 0) {
-              setMessageConsents((current) => ({
-                ...current,
-                [message.id]: capturedAttempts,
-              }))
-            }
-            setPendingAttempts([])
-            pendingAttemptsRef.current = []
             if (sentenceSpeakerRef.current) {
               sentenceSpeakerRef.current.flush()
               sentenceSpeakerRef.current = null
             } else if (voiceEnabled && message.speakerKind === "character") {
+              // Request/Consented/Refused already played (or skipped) by the
+              // labeled enqueue paths above; everything else (Move, fulfillment,
+              // long prose) plays here.
               const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
-              if (experimentalRef.current) {
-                if (!isLabeled) {
-                  enqueueVoice(message.speakerId, message.content, speakerPrefix(message.speakerId))
-                }
-              } else {
-                const character = characters.find((c) => c.id === message.speakerId)
-                if (character?.voice) {
-                  playVoice({
-                    voice: character.voice,
-                    text: message.content,
-                    prefix: speakerPrefix(message.speakerId),
-                    onServerFailure: () => setServerTtsAvailable(false),
-                    audioRef,
-                  }).catch(() => {})
-                }
+              if (!isLabeled) {
+                enqueueVoice(message.speakerId, message.content, speakerPrefix(message.speakerId))
               }
             }
             // Re-enable inputs as soon as the user-visible turn lands. Memory
@@ -517,8 +442,6 @@ export function ScenarioPlay({
     const res = await fetch(`/api/scenarios/${scenarioId}/messages`, { method: "DELETE" })
     if (res.ok) {
       setMessages([])
-      setPendingAttempts([])
-      pendingAttemptsRef.current = []
       setMessageConsents({})
     }
   }
@@ -556,9 +479,6 @@ export function ScenarioPlay({
               </div>
             )
           })}
-          {pendingAttempts.map((a, idx) => (
-            <AttemptBlock key={`pending-${idx}`} attempt={a} />
-          ))}
           {pendingTurn && (
             <div className="rounded-lg bg-muted/60 p-3">
               <div className="text-xs font-medium text-muted-foreground mb-1">{pendingTurn.name}</div>

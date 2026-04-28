@@ -452,8 +452,23 @@ export async function proposeIntent(args: {
         ].join("\n")
       : "## Other known locations\n(none — MOVE is not available)"
 
+  const history: ChatMessage[] = messages.map((m) => {
+    if (m.speakerKind === "user") {
+      return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
+    }
+    if (m.speakerKind === "narrator") {
+      return { role: "user", content: `[${m.speakerName || "Narrator"}]: ${m.content}` }
+    }
+    if (m.speakerId === speaker.id) {
+      return { role: "assistant", content: m.content }
+    }
+    const label =
+      m.speakerId && aliases.has(m.speakerId) ? aliases.get(m.speakerId)! : m.speakerName
+    return { role: "user", content: `[${label}]: ${m.content}` }
+  })
+
   const prompt = [
-    baseSceneBlock(context, messages, {
+    baseSceneBlock(context, null, {
       povCharacterId: speaker.id,
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
@@ -467,7 +482,7 @@ export async function proposeIntent(args: {
     .filter((s) => s.length > 0)
     .join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
+  const raw = await generateOnce({ backend, system, history, prompt, signal: args.signal })
   return parseIntentProposal(raw, others, aliases, destinations)
 }
 

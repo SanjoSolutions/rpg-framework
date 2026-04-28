@@ -120,24 +120,35 @@ async function streamNemomix(options: StreamOptions): Promise<void> {
 interface GenerateOptions {
   backend: LLMBackend
   system?: string
+  history?: ChatMessage[]
   prompt: string
   signal?: AbortSignal
 }
 
 export async function generateOnce(options: GenerateOptions): Promise<string> {
+  const truncatedHistory = (options.history ?? [])
+    .filter((m) => m.role !== "system" && m.content.length > 0)
+    .slice(-MAX_HISTORY_MESSAGES)
   logger.info(
     {
       backend: options.backend,
       mode: "once",
       system: options.system,
+      history: truncatedHistory,
       prompt: options.prompt,
     },
     "LLM request",
   )
   if (options.backend === "nemomix-local") {
     const baseUrl = (process.env.NEMOMIX_LOCAL_URL ?? DEFAULT_NEMOMIX_URL).replace(/\/$/, "")
-    const messages: { role: "system" | "user"; content: string }[] = []
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = []
     if (options.system) messages.push({ role: "system", content: options.system })
+    for (const m of truncatedHistory) {
+      messages.push({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })
+    }
     messages.push({ role: "user", content: options.prompt })
 
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -158,6 +169,19 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
     }
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
     return (data.choices?.[0]?.message?.content ?? "").trim()
+  }
+
+  if (truncatedHistory.length > 0) {
+    const result = await generateText({
+      model: xai.responses(GROK_MODEL),
+      system: options.system,
+      messages: [
+        ...truncatedHistory.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user" as const, content: options.prompt },
+      ],
+      abortSignal: options.signal,
+    })
+    return result.text.trim()
   }
 
   const result = await generateText({
