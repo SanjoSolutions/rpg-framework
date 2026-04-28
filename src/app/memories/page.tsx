@@ -1,7 +1,7 @@
+import { MemoryManager } from "@/components/memory-manager"
 import { listCharacters } from "@/lib/characters"
 import { listLocations } from "@/lib/locations"
 import { listAllMemories } from "@/lib/memories"
-import { MemoryManager } from "@/components/memory-manager"
 
 export const dynamic = "force-dynamic"
 
@@ -14,8 +14,7 @@ export default function MemoriesPage() {
       <div>
         <h1 className="text-2xl font-bold">Memories</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          What each character remembers from past scenes. Memories with no associations always inject; otherwise they
-          inject only when an associated character or the linked location is part of the current scene.
+          What each character remembers from past scenes.
         </p>
       </div>
       <MemoryManager initialMemories={memories} characters={characters} locations={locations} />

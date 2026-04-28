@@ -1,13 +1,13 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
 import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Character } from "@/lib/characters"
+import { useRouter } from "next/navigation"
+import { useRef, useState } from "react"
 
 interface Props {
   mode: "create" | "edit"
@@ -93,6 +93,7 @@ export function CharacterForm({ mode, character }: Props) {
         </div>
         <Input
           id="name"
+          autoFocus
           ref={nameRef}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -117,7 +118,6 @@ export function CharacterForm({ mode, character }: Props) {
           value={appearance}
           onChange={(e) => setAppearance(e.target.value)}
           rows={4}
-          placeholder="What others see at a glance: physical traits, clothing, posture, demeanor."
         />
       </div>
       <div className="space-y-2">
@@ -137,7 +137,6 @@ export function CharacterForm({ mode, character }: Props) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={6}
-          placeholder="Personality, mannerisms, voice, mood, motivations, history, secrets, anything else worth knowing…"
         />
       </div>
       <div className="space-y-2">

@@ -1,8 +1,5 @@
 "use client"
 
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
 import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +8,9 @@ import { Textarea } from "@/components/ui/textarea"
 import type { Character } from "@/lib/characters"
 import type { Location } from "@/lib/locations"
 import type { Scenario } from "@/lib/scenarios"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useRef, useState } from "react"
 
 interface Props {
   mode: "create" | "edit"
@@ -164,6 +164,7 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
           />
         </div>
         <Input
+          autoFocus
           id="name"
           ref={nameRef}
           value={name}

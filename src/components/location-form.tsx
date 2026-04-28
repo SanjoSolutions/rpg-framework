@@ -1,13 +1,13 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
 import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Location } from "@/lib/locations"
+import { useRouter } from "next/navigation"
+import { useRef, useState } from "react"
 
 interface Props {
   mode: "create" | "edit"
@@ -81,6 +81,7 @@ export function LocationForm({ mode, location }: Props) {
         </div>
         <Input
           id="name"
+          autoFocus
           ref={nameRef}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -105,7 +106,6 @@ export function LocationForm({ mode, location }: Props) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={6}
-          placeholder="What does this place look, sound, and feel like?"
         />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
