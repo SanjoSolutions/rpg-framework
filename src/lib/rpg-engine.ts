@@ -1,3 +1,4 @@
+import { z } from "zod"
 import type { Character } from "./characters"
 import type { Location } from "./locations"
 import {
@@ -8,7 +9,17 @@ import {
 } from "./memories"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
-import { generateOnce, streamChat, type ChatMessage, type LLMBackend } from "./llm"
+import {
+  generateObject,
+  generateOnce,
+  streamChat,
+  type ChatMessage,
+  type LLMBackend,
+} from "./llm"
+
+function enumOf(values: readonly string[]) {
+  return z.enum(values as [string, ...string[]])
+}
 
 export interface SceneContext {
   scenario: Scenario
@@ -177,36 +188,6 @@ function baseSceneBlock(
   return sections.join("\n\n")
 }
 
-export function parseSpeakerCandidates(raw: string, eligible: Character[]): Character[] {
-  const cleaned = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").trim()
-  if (!cleaned) return []
-
-  const tokens = cleaned
-    .split(/[\s,;|/]+/)
-    .map((t) => t.replace(/^[`"'(\[]+|[`"')\].,;:]+$/g, "").trim())
-    .filter(Boolean)
-
-  const seen = new Set<string>()
-  const matched: Character[] = []
-  for (const token of tokens) {
-    const c = eligible.find((e) => e.id === token)
-    if (c && !seen.has(c.id)) {
-      seen.add(c.id)
-      matched.push(c)
-    }
-  }
-  if (matched.length > 0) return matched
-
-  const lower = cleaned.toLowerCase()
-  for (const c of eligible) {
-    if (lower.includes(c.name.toLowerCase()) && !seen.has(c.id)) {
-      seen.add(c.id)
-      matched.push(c)
-    }
-  }
-  return matched
-}
-
 export async function pickNextSpeaker(args: {
   backend: LLMBackend
   context: SceneContext
@@ -243,30 +224,45 @@ export async function pickNextSpeaker(args: {
   }
 
   const roster = eligible.map((c) => `- ${c.name} (id: ${c.id})`).join("\n")
+  const eligibleIds = eligible.map((c) => c.id)
 
   const system = [
     "You are the director of a collaborative roleplay scene.",
     "Choose which of the listed characters should speak or act next, based on the recent transcript.",
-    "If exactly one character is the natural choice, output that character's id.",
-    "If multiple characters could plausibly take the next turn, output a comma-separated list of their ids — one will be chosen at random.",
-    "The output is the bare ids themselves.",
+    "If exactly one character is the natural choice, return a single id in candidateIds.",
+    "If multiple characters could plausibly take the next turn, return all of their ids — one will be chosen at random.",
   ].join(" ")
 
   const prompt = [
     baseSceneBlock(context, messages),
     "## Roster (eligible speakers)",
     roster,
-    "Respond with a comma-separated list of one or more eligible character ids.",
+    "Pick one or more eligible character ids.",
   ].join("\n\n")
 
-  const raw = await generateOnce({
+  const schema = z.object({
+    candidateIds: z.array(enumOf(eligibleIds)).min(1),
+  })
+
+  const result = await generateObject({
     backend: args.backend,
     system,
     prompt,
+    schema,
+    schemaName: "speakerCandidates",
     signal: args.signal,
   })
 
-  const candidates = parseSpeakerCandidates(raw, eligible)
+  const seen = new Set<string>()
+  const candidates: Character[] = []
+  for (const id of result.candidateIds) {
+    if (seen.has(id)) continue
+    const c = eligible.find((e) => e.id === id)
+    if (c) {
+      seen.add(id)
+      candidates.push(c)
+    }
+  }
   const pool = candidates.length > 0 ? candidates : [eligible[0]]
   const chosen = selectRandom(pool, args.rng)
   return { kind: "character", characterId: chosen.id, name: chosen.name }
@@ -297,87 +293,6 @@ export interface IntentProposal {
   intent: string
   targetIds: string[]
   destinationLocationId: string | null
-}
-
-export function parseIntentProposal(
-  raw: string,
-  candidates: Character[],
-  aliases?: Map<string, string>,
-  destinations: Location[] = [],
-  options: { allowRequestConsent?: boolean } = {},
-): IntentProposal {
-  const allowRequestConsent = options.allowRequestConsent ?? true
-  const lines = raw.split(/\r?\n/)
-  let typeRaw = ""
-  let intent = ""
-  let involves = ""
-  let destinationRaw = ""
-  for (const line of lines) {
-    const typeMatch = /^\s*TYPE\s*:\s*(.+?)\s*$/i.exec(line)
-    if (typeMatch && !typeRaw) {
-      typeRaw = typeMatch[1].trim()
-      continue
-    }
-    const intentMatch = /^\s*INTENT\s*:\s*(.+?)\s*$/i.exec(line)
-    if (intentMatch && !intent) {
-      intent = intentMatch[1].trim()
-      continue
-    }
-    const involvesMatch = /^\s*INVOLVES\s*:\s*(.+?)\s*$/i.exec(line)
-    if (involvesMatch && !involves) {
-      involves = involvesMatch[1].trim()
-      continue
-    }
-    const destMatch = /^\s*DESTINATION\s*:\s*(.+?)\s*$/i.exec(line)
-    if (destMatch && !destinationRaw) {
-      destinationRaw = destMatch[1].trim()
-    }
-  }
-  if (!intent) intent = raw.trim().split(/\r?\n/)[0]?.trim() ?? ""
-
-  const targetIds: string[] = []
-  if (involves && !/^none$/i.test(involves)) {
-    const matched = parseSpeakerCandidates(involves, candidates)
-    for (const c of matched) {
-      if (!targetIds.includes(c.id)) targetIds.push(c.id)
-    }
-    if (aliases) {
-      const lower = involves.toLowerCase()
-      for (const [id, alias] of aliases) {
-        if (!targetIds.includes(id) && lower.includes(alias.toLowerCase())) {
-          targetIds.push(id)
-        }
-      }
-    }
-  }
-
-  let destinationLocationId: string | null = null
-  if (destinationRaw && !/^none$/i.test(destinationRaw)) {
-    const exact = destinations.find((l) => l.id === destinationRaw)
-    if (exact) {
-      destinationLocationId = exact.id
-    } else {
-      const lower = destinationRaw.toLowerCase()
-      const byName = destinations.find((l) => lower.includes(l.name.toLowerCase()))
-      if (byName) destinationLocationId = byName.id
-    }
-  }
-
-  const upper = typeRaw.toUpperCase()
-  let type: IntentType
-  if (/REQUEST/.test(upper)) type = "REQUEST_CONSENT"
-  else if (/SPEAK/.test(upper)) type = "SPEAK"
-  else if (/MOVE/.test(upper)) type = "MOVE"
-  else if (/\bACT\b/.test(upper)) type = "ACT"
-  else if (destinationLocationId) type = "MOVE"
-  else type = allowRequestConsent && targetIds.length > 0 ? "REQUEST_CONSENT" : "ACT"
-
-  if (!allowRequestConsent && type === "REQUEST_CONSENT") type = "ACT"
-  if (type !== "REQUEST_CONSENT" && type !== "MOVE") targetIds.length = 0
-  if (type !== "MOVE") destinationLocationId = null
-  if (type === "MOVE" && !allowRequestConsent) targetIds.length = 0
-
-  return { type, intent, targetIds, destinationLocationId }
 }
 
 export interface PreviousAttempt {
@@ -470,18 +385,16 @@ export async function proposeIntent(args: {
 
   const system = [
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
-    `Keep your INTENT in first person: "I"/"me"/"my"/"myself" refers to you, ${speaker.name}. Third-person mention of "${speaker.name}" would signal another character. The roster below lists the OTHER characters present.`,
+    `Keep your intent in first person: "I"/"me"/"my"/"myself" refers to you, ${speaker.name}. Third-person mention of "${speaker.name}" would signal another character. The roster below lists the OTHER characters present.`,
     "The action belongs to you — describe what you yourself do.",
-    `Pick exactly one of ${allowRequestConsent ? "four" : "three"} turn TYPES:`,
+    `Pick exactly one of ${allowRequestConsent ? "four" : "three"} turn types:`,
     ...typeBullets,
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
-    "Any [Director] line in the transcript is authoritative out-of-character direction from the user steering the scene. Let it guide your TYPE and INTENT this turn.",
+    "Any [Director] line in the transcript is authoritative out-of-character direction from the user steering the scene. Let it guide your type and intent this turn.",
     involvesGuidance,
-    "Use this exact format:",
-    `TYPE: <${typeChoices}>`,
-    "INTENT: <one sentence>",
-    "INVOLVES: <comma-separated character ids, or NONE>",
-    "DESTINATION: <location id from the list when TYPE is MOVE; NONE in other cases>",
+    `Allowed types: ${typeChoices}.`,
+    "Set involves to the list of affected character ids (empty when none).",
+    "Set destinationId to the destination location's id when type is MOVE; null otherwise.",
   ].join("\n")
 
   const destinationsBlock =
@@ -517,17 +430,56 @@ export async function proposeIntent(args: {
     roster,
     destinationsBlock,
     previousBlock,
-    "Now state your TYPE, INTENT, INVOLVES, and DESTINATION.",
+    "Now propose your turn.",
   ]
     .filter((s) => s.length > 0)
     .join("\n\n")
 
-  const raw = await generateOnce({ backend, system, history, prompt, signal: args.signal })
-  const parsed = parseIntentProposal(raw, others, aliases, destinations, { allowRequestConsent })
-  if (mentionsOwnName(parsed.intent, speaker.name)) {
+  const allowedTypes: IntentType[] = allowRequestConsent
+    ? ["REQUEST_CONSENT", "SPEAK", "ACT", "MOVE"]
+    : ["SPEAK", "ACT", "MOVE"]
+  const otherIds = others.map((c) => c.id)
+  const destIds = destinations.map((d) => d.id)
+  const involvesField =
+    otherIds.length > 0
+      ? z.array(enumOf(otherIds))
+      : z.array(z.string()).max(0)
+  const destinationField =
+    destIds.length > 0 ? z.union([enumOf(destIds), z.null()]) : z.null()
+  const schema = z.object({
+    type: enumOf(allowedTypes),
+    intent: z.string(),
+    involves: involvesField,
+    destinationId: destinationField,
+  })
+
+  const result = await generateObject({
+    backend,
+    system,
+    history,
+    prompt,
+    schema,
+    schemaName: "intentProposal",
+    signal: args.signal,
+  })
+
+  let type = result.type as IntentType
+  let targetIds = Array.from(new Set(result.involves ?? []))
+  let destinationLocationId: string | null =
+    result.destinationId && destIds.includes(result.destinationId)
+      ? result.destinationId
+      : null
+
+  if (!allowRequestConsent && type === "REQUEST_CONSENT") type = "ACT"
+  if (type !== "REQUEST_CONSENT" && type !== "MOVE") targetIds = []
+  if (type !== "MOVE") destinationLocationId = null
+  if (type === "MOVE" && !allowRequestConsent) targetIds = []
+
+  const intent = result.intent.trim()
+  if (mentionsOwnName(intent, speaker.name)) {
     return { type: "ACT", intent: "", targetIds: [], destinationLocationId: null }
   }
-  return parsed
+  return { type, intent, targetIds, destinationLocationId }
 }
 
 export interface ConsentDecision {
@@ -537,81 +489,10 @@ export interface ConsentDecision {
   feedback: string
 }
 
-export function parseConsentResponse(
-  raw: string,
-  character: Character,
-): ConsentDecision {
-  const lines = raw.split(/\r?\n/)
-  let decisionWord = ""
-  let feedback = ""
-  for (const line of lines) {
-    const decisionMatch = /^\s*DECISION\s*:\s*(.+?)\s*$/i.exec(line)
-    if (decisionMatch && !decisionWord) {
-      decisionWord = decisionMatch[1].trim()
-      continue
-    }
-    const feedbackMatch = /^\s*FEEDBACK\s*:\s*(.+?)\s*$/i.exec(line)
-    if (feedbackMatch && !feedback) {
-      feedback = feedbackMatch[1].trim()
-    }
-  }
-  if (!decisionWord) decisionWord = raw.trim()
-  const lower = decisionWord.toLowerCase()
-  // Default to refusing on ambiguous output — safer for consent semantics.
-  const yes = /^y(es|eah|up|ep)?\b/.test(lower) || /\bconsent(s|ed)?\b/.test(lower)
-  const no = /^n(o|ope|ah)?\b/.test(lower) || /\brefus|declin|object/.test(lower)
-  const decision: "yes" | "no" = yes && !no ? "yes" : "no"
-  if (!feedback) feedback = decision === "yes" ? "Agrees." : "Declines."
-  return {
-    characterId: character.id,
-    characterName: character.name,
-    decision,
-    feedback,
-  }
-}
-
 export interface ExtractedMemory {
   content: string
   characterIds: string[]
   locationRelevant: boolean
-}
-
-const MEMORY_LINE_REGEX =
-  /^\s*\d+\s*[\.\)]\s*([^|]+?)\s*\|\s*characters\s*:\s*([^|]*?)\s*\|\s*location\s*:\s*([^|]*?)\s*$/i
-
-export function parseExtractedMemories(
-  raw: string,
-  candidates: Character[],
-  allCharacters: Character[] = candidates,
-): ExtractedMemory[] {
-  const lines = raw.split(/\r?\n/)
-  const out: ExtractedMemory[] = []
-  for (const line of lines) {
-    if (/^\s*none\s*$/i.test(line)) return []
-    const m = MEMORY_LINE_REGEX.exec(line)
-    if (!m) continue
-    const rawContent = m[1].trim()
-    if (!rawContent) continue
-    const content = normalizeMemoryReferences(rawContent, allCharacters)
-    const charsRaw = m[2].trim()
-    const locRaw = m[3].trim()
-    const matchedChars =
-      charsRaw && !/^none$/i.test(charsRaw)
-        ? parseSpeakerCandidates(charsRaw, candidates).map((c) => c.id)
-        : []
-    // Augment with any IDs referenced inline via [char:UUID] placeholders.
-    const inlineIds = extractReferencedCharacterIds(content).filter((id) =>
-      candidates.some((c) => c.id === id),
-    )
-    const merged = [...new Set([...matchedChars, ...inlineIds])]
-    const locationRelevant = /^(yes|y|true)$/i.test(locRaw)
-    out.push({
-      content,
-      characterIds: merged,
-      locationRelevant,
-    })
-  }
-  return out
 }
 
 export async function extractMemoriesFromTurn(args: {
@@ -644,13 +525,10 @@ export async function extractMemoriesFromTurn(args: {
     `You extract long-term memories worth keeping for ${speaker.name}, from their first-person POV.`,
     `Focus on things that would still matter to ${speaker.name} days, weeks, or scenes from now — durable facts that shape future decisions or relationships.`,
     "GOOD candidates: someone's name once revealed, a confided secret, a past event in their life, a stated goal or fear, a strong-held opinion or value, a promise made or broken, a bond formed, a betrayal, a learned skill or fact about the world, a permanent change in the relationship.",
-    "Be conservative — most turns produce zero memories. Extract when there is something genuinely durable.",
-    "Each memory: ONE short sentence in third person from the rememberer's perspective.",
-    "When referring to ANY character (including the rememberer themselves) inside the memory text, ALWAYS use the placeholder syntax `[char:<id>]` with the character's id from the roster. Example: '[char:c1] fled the capital after a falling-out with her family'.",
-    "For each memory, also list which other character(s) it is about (using their ids from the roster, or NONE), and whether it is meaningfully tied to the current location (YES or NO).",
-    "Use this format, one memory per line:",
-    "1. <memory using [char:<id>] placeholders> | characters: <ids or NONE> | location: <YES or NO>",
-    "For an ephemeral turn, output exactly: NONE",
+    "Be conservative — most turns produce zero memories. Extract when there is something genuinely durable. For an ephemeral turn, return an empty memories array.",
+    "Each memory's content: ONE short sentence in third person from the rememberer's perspective.",
+    "When referring to ANY character (including the rememberer themselves) inside the memory content, ALWAYS use the placeholder syntax `[char:<id>]` with the character's id from the roster. Example: '[char:c1] fled the capital after a falling-out with her family'.",
+    "For each memory, also list which other character ids it is about (empty array if none), and whether it is meaningfully tied to the current location.",
   ].join("\n")
 
   const prompt = [
@@ -660,42 +538,49 @@ export async function extractMemoriesFromTurn(args: {
     roster,
     `## Recent turn(s)`,
     transcript,
-    `Now extract memories. Reference characters via [char:<id>] inside the memory text.`,
+    `Now extract memories. Reference characters via [char:<id>] inside the memory content.`,
   ].join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return parseExtractedMemories(raw, others, context.characters)
+  const allIds = context.characters.map((c) => c.id)
+  const charField =
+    allIds.length > 0 ? z.array(enumOf(allIds)) : z.array(z.string()).max(0)
+  const schema = z.object({
+    memories: z.array(
+      z.object({
+        content: z.string(),
+        characterIds: charField,
+        locationRelevant: z.boolean(),
+      }),
+    ),
+  })
+
+  const result = await generateObject({
+    backend,
+    system,
+    prompt,
+    schema,
+    schemaName: "extractedMemories",
+    signal: args.signal,
+  })
+
+  const candidateIds = new Set(others.map((c) => c.id))
+  const out: ExtractedMemory[] = []
+  for (const m of result.memories) {
+    const content = normalizeMemoryReferences(m.content.trim(), context.characters)
+    if (!content) continue
+    const fromList = m.characterIds.filter((id) => candidateIds.has(id))
+    const inlineIds = extractReferencedCharacterIds(content).filter((id) =>
+      candidateIds.has(id),
+    )
+    const merged = [...new Set([...fromList, ...inlineIds])]
+    out.push({ content, characterIds: merged, locationRelevant: m.locationRelevant })
+  }
+  return out
 }
 
 export interface NameLearning {
   knowerId: string
   knownId: string
-}
-
-const NAME_LINE_REGEX =
-  /^\s*\d+\s*[\.\)]\s*([^\s|,]+)\s*(?:->|→|=>|learned|now knows|knows)\s*([^\s|,]+)/i
-
-export function parseNameLearnings(
-  raw: string,
-  candidates: Character[],
-): NameLearning[] {
-  const ids = new Set(candidates.map((c) => c.id))
-  const out: NameLearning[] = []
-  const seen = new Set<string>()
-  for (const line of raw.split(/\r?\n/)) {
-    if (/^\s*none\s*$/i.test(line)) return []
-    const m = NAME_LINE_REGEX.exec(line)
-    if (!m) continue
-    const knowerId = m[1].trim()
-    const knownId = m[2].trim()
-    if (!ids.has(knowerId) || !ids.has(knownId)) continue
-    if (knowerId === knownId) continue
-    const key = `${knowerId}->${knownId}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ knowerId, knownId })
-  }
-  return out
 }
 
 /**
@@ -740,9 +625,7 @@ export async function extractNameLearningsFromTurn(args: {
     "A name counts as learned when it was actually spoken or clearly revealed in a way the listener heard and understood (e.g. someone introduces themselves, someone addresses another by name within earshot, a name is read off a badge or document).",
     "Be conservative. Mark a learning when context made the name clear, the speaker was within earshot, and the reference was specific.",
     "Names from pure narration count when a character actually says or reveals them in-scene.",
-    "Use one line per newly-learned name, in this format:",
-    "1. <knower_id> -> <known_id>",
-    "For a turn that yields zero learnings, output exactly: NONE",
+    "Return only pairs taken from the unknown pairs list. For a turn that yields zero learnings, return an empty learnings array.",
   ].join("\n")
 
   const prompt = [
@@ -755,11 +638,36 @@ export async function extractNameLearningsFromTurn(args: {
     "Which of the listed pairs are now learned? List pairs from the list above that were actually revealed in the transcript.",
   ].join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  const candidates = context.characters
-  const all = parseNameLearnings(raw, candidates)
+  const allIds = context.characters.map((c) => c.id)
+  const schema = z.object({
+    learnings: z.array(
+      z.object({
+        knowerId: enumOf(allIds),
+        knownId: enumOf(allIds),
+      }),
+    ),
+  })
+
+  const result = await generateObject({
+    backend,
+    system,
+    prompt,
+    schema,
+    schemaName: "nameLearnings",
+    signal: args.signal,
+  })
+
   const allowed = new Set(unknownPairs.map((p) => `${p.knowerId}->${p.knownId}`))
-  return all.filter((p) => allowed.has(`${p.knowerId}->${p.knownId}`))
+  const seen = new Set<string>()
+  const out: NameLearning[] = []
+  for (const l of result.learnings) {
+    if (l.knowerId === l.knownId) continue
+    const key = `${l.knowerId}->${l.knownId}`
+    if (!allowed.has(key) || seen.has(key)) continue
+    seen.add(key)
+    out.push({ knowerId: l.knowerId, knownId: l.knownId })
+  }
+  return out
 }
 
 export async function requestConsent(args: {
@@ -793,9 +701,8 @@ export async function requestConsent(args: {
     `${speakerLabel} is about to act on you in the scene. You are the RECIPIENT — ${speakerLabel} performs the action; your part is to decide whether to allow it.`,
     `The proposed action below is written in ${speakerLabel}'s own first-person voice. Any "I", "me", or "my" in it refers to ${speakerLabel}. You remain the recipient — ${speakerLabel} carries the action out.`,
     "Refuse if your character would object to having this done to them, given who they are, the situation, and what just happened.",
-    "Use this exact format:",
-    "DECISION: YES or NO",
-    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character feedback on the proposed action, which they will receive before they take their turn so they can adjust. Kept silent in the scene; treat it as a backchannel signal between characters.>`,
+    `Set decision to "yes" to allow ${speakerLabel} to do this, or "no" to refuse.`,
+    `Set feedback to one short sentence addressed to ${speakerLabel} — your in-character feedback on the proposed action, which they will receive before they take their turn so they can adjust. Kept silent in the scene; treat it as a backchannel signal between characters.`,
   ]
     .filter(Boolean)
     .join("\n")
@@ -809,11 +716,46 @@ export async function requestConsent(args: {
     `## Proposed action — by ${speakerLabel}, toward you`,
     `${speakerLabel}'s own words ("I" = ${speakerLabel}):`,
     `> ${intent}`,
-    `Decide whether you, ${target.name}, allow ${speakerLabel} to do this to you. Now give your DECISION and REASON.`,
+    `Decide whether you, ${target.name}, allow ${speakerLabel} to do this to you.`,
   ].join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return parseConsentResponse(raw, target)
+  return await generateConsentDecision({
+    backend,
+    system,
+    prompt,
+    target,
+    signal: args.signal,
+  })
+}
+
+const consentSchema = z.object({
+  decision: z.enum(["yes", "no"]),
+  feedback: z.string(),
+})
+
+async function generateConsentDecision(args: {
+  backend: LLMBackend
+  system: string
+  prompt: string
+  target: Character
+  signal?: AbortSignal
+}): Promise<ConsentDecision> {
+  const result = await generateObject({
+    backend: args.backend,
+    system: args.system,
+    prompt: args.prompt,
+    schema: consentSchema,
+    schemaName: "consentDecision",
+    signal: args.signal,
+  })
+  const feedback =
+    result.feedback.trim() || (result.decision === "yes" ? "Agrees." : "Declines.")
+  return {
+    characterId: args.target.id,
+    characterName: args.target.name,
+    decision: result.decision,
+    feedback,
+  }
 }
 
 export interface ConsentRefusal {
@@ -851,9 +793,8 @@ export async function requestMoveConsent(args: {
       : "",
     `${speakerLabel} is leaving the current scene for ${destinationName} and has asked you to come along.`,
     "Decide whether your character would actually go with them, given who you are, your current goals, and what just happened.",
-    "Use this exact format:",
-    "DECISION: YES or NO",
-    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character reply to the invitation. Treat it as a backchannel signal between characters.>`,
+    `Set decision to "yes" to go along, or "no" to stay.`,
+    `Set feedback to one short sentence addressed to ${speakerLabel} — your in-character reply to the invitation. Treat it as a backchannel signal between characters.`,
   ]
     .filter(Boolean)
     .join("\n")
@@ -866,37 +807,16 @@ export async function requestMoveConsent(args: {
     }),
     `## Invitation — by ${speakerLabel}, to you`,
     `${speakerLabel} is heading to ${destinationName} and is asking you to come too.`,
-    `Decide whether you, ${target.name}, go with them. Now give your DECISION and FEEDBACK.`,
+    `Decide whether you, ${target.name}, go with them.`,
   ].join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return parseConsentResponse(raw, target)
-}
-
-export function parseCharacterIdList(raw: string, candidates: Character[]): string[] {
-  const ids = new Set(candidates.map((c) => c.id))
-  const out: string[] = []
-  const seen = new Set<string>()
-  const tokens = raw
-    .replace(/[\r\n]+/g, " ")
-    .split(/[\s,;|/]+/)
-    .map((t) => t.replace(/^[`"'(\[]+|[`"')\].,;:]+$/g, "").trim())
-    .filter(Boolean)
-  for (const token of tokens) {
-    if (ids.has(token) && !seen.has(token)) {
-      seen.add(token)
-      out.push(token)
-    }
-  }
-  if (out.length > 0) return out
-  const lower = raw.toLowerCase()
-  for (const c of candidates) {
-    if (lower.includes(c.name.toLowerCase()) && !seen.has(c.id)) {
-      seen.add(c.id)
-      out.push(c.id)
-    }
-  }
-  return out
+  return await generateConsentDecision({
+    backend,
+    system,
+    prompt,
+    target,
+    signal: args.signal,
+  })
 }
 
 /**
@@ -921,7 +841,6 @@ export async function pickFulfillers(args: {
   const system = [
     "You direct who acts to fulfill a consented request, and in what order.",
     "List the characters who need to physically act for the request to be carried out, in the order they should act. Limit the list to active participants.",
-    "Output ordered character ids as plain text, one per line.",
   ].join("\n")
 
   const prompt = [
@@ -929,13 +848,32 @@ export async function pickFulfillers(args: {
     `> ${intent}`,
     "## Eligible actors",
     roster,
-    "List the ordered character ids of the actors who need to act, one per line.",
+    "List the ordered character ids of the actors who need to act.",
   ].join("\n\n")
 
-  const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  const parsed = parseCharacterIdList(raw, candidates)
-  if (parsed.length > 0) return parsed
-  return [speaker.id]
+  const candidateIds = candidates.map((c) => c.id)
+  const schema = z.object({
+    orderedActorIds: z.array(enumOf(candidateIds)).min(1),
+  })
+
+  const result = await generateObject({
+    backend,
+    system,
+    prompt,
+    schema,
+    schemaName: "fulfillers",
+    signal: args.signal,
+  })
+
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const id of result.orderedActorIds) {
+    if (!seen.has(id) && candidateIds.includes(id)) {
+      seen.add(id)
+      ordered.push(id)
+    }
+  }
+  return ordered.length > 0 ? ordered : [speaker.id]
 }
 
 /**

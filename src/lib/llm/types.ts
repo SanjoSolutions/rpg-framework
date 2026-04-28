@@ -1,3 +1,5 @@
+import type { z } from "zod"
+
 export const MAX_HISTORY_MESSAGES = 30
 
 export const LLM_BACKENDS = ["grok", "ollama"] as const
@@ -27,8 +29,19 @@ export interface GenerateOnceArgs {
   signal?: AbortSignal
 }
 
+export interface GenerateObjectArgs<T> {
+  system?: string
+  history?: ChatMessage[]
+  prompt: string
+  schema: z.ZodType<T>
+  schemaName: string
+  schemaDescription?: string
+  signal?: AbortSignal
+}
+
 export interface LLMStrategy {
   readonly name: LLMBackend
   streamChat(args: StreamChatArgs): Promise<void>
   generateOnce(args: GenerateOnceArgs): Promise<string>
+  generateObject<T>(args: GenerateObjectArgs<T>): Promise<T>
 }

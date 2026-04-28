@@ -1,7 +1,12 @@
 import { createXai, xai as defaultXai } from "@ai-sdk/xai"
-import { generateText, streamText } from "ai"
+import { generateObject, generateText, streamText } from "ai"
 import { getXaiApiKey } from "../../xai-credentials"
-import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "../types"
+import type {
+  GenerateObjectArgs,
+  GenerateOnceArgs,
+  LLMStrategy,
+  StreamChatArgs,
+} from "../types"
 
 const GROK_MODEL = "grok-4-1-fast-non-reasoning"
 
@@ -49,5 +54,24 @@ export const grokStrategy: LLMStrategy = {
       abortSignal: args.signal,
     })
     return result.text.trim()
+  },
+
+  async generateObject<T>(args: GenerateObjectArgs<T>): Promise<T> {
+    const xai = getProvider()
+    const history = args.history ?? []
+    const messages = [
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+      { role: "user" as const, content: args.prompt },
+    ]
+    const { object } = await generateObject({
+      model: xai.responses(GROK_MODEL),
+      system: args.system,
+      messages,
+      schema: args.schema,
+      schemaName: args.schemaName,
+      schemaDescription: args.schemaDescription,
+      abortSignal: args.signal,
+    })
+    return object as T
   },
 }

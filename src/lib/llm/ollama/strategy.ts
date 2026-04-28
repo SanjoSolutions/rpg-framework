@@ -1,6 +1,12 @@
+import { z } from "zod"
 import { getLogger } from "../../logger"
 import { getSettings } from "../../settings"
-import type { GenerateOnceArgs, LLMStrategy, StreamChatArgs } from "../types"
+import type {
+  GenerateObjectArgs,
+  GenerateOnceArgs,
+  LLMStrategy,
+  StreamChatArgs,
+} from "../types"
 
 const logger = getLogger({ component: "llm", strategy: "ollama" })
 
@@ -110,5 +116,57 @@ export const ollamaStrategy: LLMStrategy = {
     }
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
     return (data.choices?.[0]?.message?.content ?? "").trim()
+  },
+
+  async generateObject<T>(args: GenerateObjectArgs<T>): Promise<T> {
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = []
+    if (args.system) messages.push({ role: "system", content: args.system })
+    for (const m of args.history ?? []) {
+      messages.push({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })
+    }
+    messages.push({ role: "user", content: args.prompt })
+
+    const jsonSchema = z.toJSONSchema(args.schema)
+
+    const response = await fetch(`${getBaseUrl()}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: getModel(),
+        messages,
+        stream: false,
+        format: jsonSchema,
+        options: { temperature: 0.4 },
+      }),
+      signal: args.signal,
+    })
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "")
+      logger.error(
+        { status: response.status, body, schemaName: args.schemaName },
+        "Ollama structured request failed",
+      )
+      throw new Error(`Ollama server ${response.status}: ${body}`)
+    }
+
+    const data = (await response.json()) as { message?: { content?: string } }
+    const content = data.message?.content?.trim() ?? ""
+    if (!content) {
+      throw new Error("Ollama returned an empty structured response")
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch (err) {
+      logger.error({ content, schemaName: args.schemaName }, "Ollama returned invalid JSON")
+      throw new Error(
+        `Ollama returned invalid JSON for ${args.schemaName}: ${(err as Error).message}`,
+      )
+    }
+    return args.schema.parse(parsed)
   },
 }

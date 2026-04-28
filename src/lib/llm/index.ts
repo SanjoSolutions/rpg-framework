@@ -4,6 +4,7 @@ import { ollamaStrategy } from "./ollama/strategy"
 import {
   MAX_HISTORY_MESSAGES,
   type ChatMessage,
+  type GenerateObjectArgs,
   type GenerateOnceArgs,
   type LLMBackend,
   type LLMStrategy,
@@ -80,4 +81,40 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
   })
   logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
   return text
+}
+
+interface GenerateObjectOptions<T> extends GenerateObjectArgs<T> {
+  backend: LLMBackend
+}
+
+export async function generateObject<T>(options: GenerateObjectOptions<T>): Promise<T> {
+  const strategy = getLLMStrategy(options.backend)
+  const truncatedHistory = (options.history ?? [])
+    .filter((m) => m.role !== "system" && m.content.length > 0)
+    .slice(-MAX_HISTORY_MESSAGES)
+  logger.info(
+    {
+      backend: options.backend,
+      mode: "object",
+      schemaName: options.schemaName,
+      system: options.system,
+      history: truncatedHistory,
+      prompt: options.prompt,
+    },
+    "LLM request",
+  )
+  const result = await strategy.generateObject<T>({
+    system: options.system,
+    history: truncatedHistory,
+    prompt: options.prompt,
+    schema: options.schema,
+    schemaName: options.schemaName,
+    schemaDescription: options.schemaDescription,
+    signal: options.signal,
+  })
+  logger.info(
+    { backend: options.backend, mode: "object", schemaName: options.schemaName, response: result },
+    "LLM response",
+  )
+  return result
 }
