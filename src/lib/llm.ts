@@ -35,10 +35,23 @@ export async function streamChat(options: StreamOptions): Promise<void> {
     },
     "LLM request",
   )
-  if (options.backend === "nemomix-local") {
-    await streamNemomix({ ...options, messages: truncated })
-  } else {
-    await streamGrok({ ...options, messages: truncated })
+  let response = ""
+  const wrappedOptions = {
+    ...options,
+    messages: truncated,
+    onText: (chunk: string) => {
+      response += chunk
+      options.onText(chunk)
+    },
+  }
+  try {
+    if (options.backend === "nemomix-local") {
+      await streamNemomix(wrappedOptions)
+    } else {
+      await streamGrok(wrappedOptions)
+    }
+  } finally {
+    logger.info({ backend: options.backend, mode: "stream", response }, "LLM response")
   }
 }
 
@@ -168,7 +181,9 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
       throw new Error(`NemoMix server ${response.status}: ${body}`)
     }
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    return (data.choices?.[0]?.message?.content ?? "").trim()
+    const text = (data.choices?.[0]?.message?.content ?? "").trim()
+    logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
+    return text
   }
 
   if (truncatedHistory.length > 0) {
@@ -181,7 +196,9 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
       ],
       abortSignal: options.signal,
     })
-    return result.text.trim()
+    const text = result.text.trim()
+    logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
+    return text
   }
 
   const result = await generateText({
@@ -190,5 +207,7 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
     prompt: options.prompt,
     abortSignal: options.signal,
   })
-  return result.text.trim()
+  const text = result.text.trim()
+  logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
+  return text
 }
