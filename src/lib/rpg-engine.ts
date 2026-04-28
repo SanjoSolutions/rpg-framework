@@ -304,7 +304,9 @@ export function parseIntentProposal(
   candidates: Character[],
   aliases?: Map<string, string>,
   destinations: Location[] = [],
+  options: { allowRequestConsent?: boolean } = {},
 ): IntentProposal {
+  const allowRequestConsent = options.allowRequestConsent ?? true
   const lines = raw.split(/\r?\n/)
   let typeRaw = ""
   let intent = ""
@@ -368,10 +370,12 @@ export function parseIntentProposal(
   else if (/MOVE/.test(upper)) type = "MOVE"
   else if (/\bACT\b/.test(upper)) type = "ACT"
   else if (destinationLocationId) type = "MOVE"
-  else type = targetIds.length > 0 ? "REQUEST_CONSENT" : "ACT"
+  else type = allowRequestConsent && targetIds.length > 0 ? "REQUEST_CONSENT" : "ACT"
 
+  if (!allowRequestConsent && type === "REQUEST_CONSENT") type = "ACT"
   if (type !== "REQUEST_CONSENT" && type !== "MOVE") targetIds.length = 0
   if (type !== "MOVE") destinationLocationId = null
+  if (type === "MOVE" && !allowRequestConsent) targetIds.length = 0
 
   return { type, intent, targetIds, destinationLocationId }
 }
@@ -403,10 +407,12 @@ export async function proposeIntent(args: {
   destinations?: Location[]
   knowledge?: POVKnowledge
   previousAttempts?: PreviousAttempt[]
+  allowRequestConsent?: boolean
   signal?: AbortSignal
 }): Promise<IntentProposal> {
   const { backend, context, messages, speaker, previousAttempts } = args
   const destinations = args.destinations ?? []
+  const allowRequestConsent = args.allowRequestConsent ?? true
   const others = context.characters.filter((c) => c.id !== speaker.id)
   if (others.length === 0 && destinations.length === 0) {
     return { type: "ACT", intent: "", targetIds: [], destinationLocationId: null }
@@ -442,20 +448,37 @@ export async function proposeIntent(args: {
         ].join("\n")
       : ""
 
+  const typeBullets: string[] = []
+  if (allowRequestConsent) {
+    typeBullets.push(
+      "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
+    )
+  }
+  typeBullets.push(
+    "  • SPEAK — you say something out loud. Write INTENT as the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
+    "  • ACT — a solo move: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon. Your body moves in its own space, and physical contact with another character's body counts here too. Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
+    allowRequestConsent
+      ? "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); use INVOLVES: NONE for solo travel."
+      : "  • MOVE — you leave the current location for another known one. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. INVOLVES: NONE.",
+  )
+  const typeChoices = allowRequestConsent
+    ? "REQUEST_CONSENT or SPEAK or ACT or MOVE"
+    : "SPEAK or ACT or MOVE"
+  const involvesGuidance = allowRequestConsent
+    ? "INVOLVES contains: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent)."
+    : "INVOLVES is always NONE — fold any contact or interaction into the INTENT itself."
+
   const system = [
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
     `Keep your INTENT in first person: "I"/"me"/"my"/"myself" refers to you, ${speaker.name}. Third-person mention of "${speaker.name}" would signal another character. The roster below lists the OTHER characters present.`,
     "The action belongs to you — describe what you yourself do.",
-    "Pick exactly one of four turn TYPES:",
-    "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
-    "  • SPEAK — you say something out loud. Write INTENT as the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
-    "  • ACT — a solo move: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon. Your body moves in its own space. Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
-    "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); use INVOLVES: NONE for solo travel.",
+    `Pick exactly one of ${allowRequestConsent ? "four" : "three"} turn TYPES:`,
+    ...typeBullets,
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
     "Any [Director] line in the transcript is authoritative out-of-character direction from the user steering the scene. Let it guide your TYPE and INTENT this turn.",
-    "INVOLVES contains: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent).",
+    involvesGuidance,
     "Use this exact format:",
-    "TYPE: <REQUEST_CONSENT or SPEAK or ACT or MOVE>",
+    `TYPE: <${typeChoices}>`,
     "INTENT: <one sentence>",
     "INVOLVES: <comma-separated character ids, or NONE>",
     "DESTINATION: <location id from the list when TYPE is MOVE; NONE in other cases>",
@@ -467,7 +490,7 @@ export async function proposeIntent(args: {
           "## Other known locations (eligible MOVE destinations)",
           destinations.map((l) => `- ${l.name} (id: ${l.id})`).join("\n"),
         ].join("\n")
-      : "## Other known locations\n(roster pending; choose SPEAK, ACT, or REQUEST_CONSENT this turn)"
+      : `## Other known locations\n(roster pending; choose ${allowRequestConsent ? "SPEAK, ACT, or REQUEST_CONSENT" : "SPEAK or ACT"} this turn)`
 
   const history: ChatMessage[] = messages.map((m) => {
     if (m.speakerKind === "user") {
@@ -500,7 +523,7 @@ export async function proposeIntent(args: {
     .join("\n\n")
 
   const raw = await generateOnce({ backend, system, history, prompt, signal: args.signal })
-  const parsed = parseIntentProposal(raw, others, aliases, destinations)
+  const parsed = parseIntentProposal(raw, others, aliases, destinations, { allowRequestConsent })
   if (mentionsOwnName(parsed.intent, speaker.name)) {
     return { type: "ACT", intent: "", targetIds: [], destinationLocationId: null }
   }

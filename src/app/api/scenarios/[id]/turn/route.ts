@@ -208,6 +208,70 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
         const MAX_CONSENT_ATTEMPTS = 3
 
+        if (speaker.kind === "character" && speaker.characterId && !requireConsent) {
+          const speakerCharacter = characters.find((c) => c.id === speaker.characterId)
+          if (speakerCharacter) {
+            const proposal = await proposeIntent({
+              backend,
+              context,
+              messages,
+              speaker: speakerCharacter,
+              destinations: otherLocations,
+              knowledge: knowledgeFor(speakerCharacter.id),
+              allowRequestConsent: false,
+              signal: request.signal,
+            })
+            intent = proposal.intent
+            send("intent", {
+              speakerId: speaker.characterId,
+              intent: proposal.intent,
+              targetIds: proposal.targetIds,
+              type: proposal.type,
+              destinationLocationId: proposal.destinationLocationId,
+              attempt: 0,
+            })
+
+            const moveDestination =
+              proposal.type === "MOVE" &&
+              proposal.intent.trim().length > 0 &&
+              proposal.destinationLocationId
+                ? otherLocations.find((l) => l.id === proposal.destinationLocationId) ?? null
+                : null
+
+            if (moveDestination) {
+              shouldStreamReply = false
+              const destination = moveDestination
+              const moveMessage = appendMessage({
+                scenarioId: scenario.id,
+                speakerKind: "character",
+                speakerId: speaker.characterId,
+                speakerName: speaker.name,
+                content: `Move to ${destination.name}: ${proposal.intent.trim()}`,
+                kind: "move",
+              })
+              touchScenario(scenario.id)
+              messages.push(moveMessage)
+              send("message", moveMessage)
+              dispatchWebhook("message.created", { message: moveMessage })
+
+              const speakerId = speaker.characterId
+              setCharacterLocation(scenario.id, speakerId, destination.id)
+              send("character_moved", {
+                characterId: speakerId,
+                characterName: speaker.name,
+                fromLocationId: scenario.locationId,
+                toLocationId: destination.id,
+                toLocationName: destination.name,
+              })
+              dispatchWebhook("scenario.character_moved", {
+                scenarioId: scenario.id,
+                characterId: speakerId,
+                locationId: destination.id,
+              })
+            }
+          }
+        }
+
         if (requireConsent && speaker.kind === "character" && speaker.characterId) {
           const speakerCharacter = characters.find((c) => c.id === speaker.characterId)
           if (speakerCharacter) {
