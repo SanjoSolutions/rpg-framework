@@ -1011,7 +1011,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
 
   const oneActionRule = [
     "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
-    "No internal monologue. Skip thoughts, feelings, motivations, and reflection — write only what you say and do, what others in the scene can see and hear.",
+    "Write only what is objectively visible or audible in the scene: physical actions you perform and words you say aloud. Nothing else.",
+    "No internal monologue, no thoughts, no feelings, no urges, no awareness, no perception, no sensation. Banned phrasings include but are not limited to: \"I find myself ...\", \"I feel ...\", \"I notice ...\", \"I sense ...\", \"I want ...\", \"I'm aware ...\", \"part of me ...\", \"something in me ...\". If a sentence describes anything happening inside your head or body that an outside observer couldn't see or hear, delete it.",
     "Stay inside the scene. No meta-commentary, no addressing the reader, no scene-boundary markers ('end of scene', 'fade to black', 'to be continued'), no recap of what just happened, no questions to the user about what to do next.",
   ]
 
@@ -1035,7 +1036,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       : intent?.trim()
         ? [
             intentLine,
-            "All affected characters consented. Your turn ENACTS this intent — that specific action is the point of your reply, what you actually deliver. You may surround it with a few words of dialogue, thought, or sensory detail, but the negotiated intent must be what your message is about. Do not substitute an unrelated action or skip past it.",
+            "All affected characters consented. Your turn ENACTS this intent — that specific action is the point of your reply, what you actually deliver. You may surround it with a few words of spoken dialogue, but the negotiated intent must be what your message is about. Do not substitute an unrelated action or skip past it.",
           ].join("\n")
         : ""
 
@@ -1048,6 +1049,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
           "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character — no acknowledgement, no meta reference to it.",
           `NEVER prefix your reply with a name or label ${labelExample}, and never with "[Director]:" or any other bracketed tag. Just write your reply directly.`,
+          "NEVER emit a [Director] line, [Director: ...] block, or any bracketed stage-direction/meta tag anywhere in your reply — not at the start, not at the end, not inline. Director lines come FROM the user TO you; you do not write them. Do not narrate your own intentions in third person or as a director would (e.g. \"She decides to walk over\", \"Lira wants to ...\"). You write only your character's first-person actions and spoken words.",
           "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
       : []
