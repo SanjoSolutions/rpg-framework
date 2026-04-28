@@ -208,12 +208,6 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             presentCharacterIds: characters.map((c) => c.id),
             locationId: scenario.locationId,
           })
-          if (memories.length > 0) {
-            send("memories_injected", {
-              speakerId: speaker.characterId,
-              count: memories.length,
-            })
-          }
         }
 
         const MAX_CONSENT_ATTEMPTS = 3

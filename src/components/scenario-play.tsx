@@ -1,6 +1,5 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,6 +12,7 @@ import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import { XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 interface SpeakerInfo {
   kind: "character" | "narrator"
@@ -363,10 +363,6 @@ export function ScenarioPlay({
               const verb = p.decision === "yes" ? "Consented" : "Refused"
               enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
             }
-          } else if (event === "memories_injected") {
-            const p = payload as { speakerId: string; count: number }
-            const name = characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
-            setStatus(pickPhrase("memories", name))
           } else if (event === "speaker") {
             const p = payload as SpeakerInfo
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
@@ -860,7 +856,6 @@ type StatusPhase =
   | "consent"
   | "consented"
   | "refused"
-  | "memories"
 
 function intentPhase(type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"): StatusPhase {
   if (type === "REQUEST_CONSENT") return "request"
@@ -876,42 +871,25 @@ const STATUS_PHRASES: Record<StatusPhase, string[]> = {
     "Choosing whose turn it is",
   ],
   speaker: [
-    "{name} gathers their thoughts",
-    "{name} takes a breath",
-    "{name} steps forward",
+    "{name} formulates",
   ],
   request: [
-    "{name} floats a bold idea",
-    "{name} reaches across the scene",
-    "{name} asks for permission",
+    "{name} requests",
   ],
   speak: [
-    "{name} finds the right words",
-    "{name} drafts a line",
-    "{name} weighs what to say",
+    "{name} formulates",
   ],
   act: [
-    "{name} settles on a beat",
-    "{name} plans a small move",
-    "{name} chooses an action",
+    "{name} plans an action",
   ],
   move: [
-    "{name} eyes the door",
-    "{name} considers a different room",
-    "{name} weighs the journey",
+    "{name} plans moving to another location",
   ],
   consent: [
-    "{name} mulls it over",
-    "{name} reads the room",
-    "{name} weighs the offer",
+    "{name} considers if to consent",
   ],
-  consented: ["{name} agrees", "{name} goes along with it", "{name} nods yes"],
-  refused: ["{name} pushes back", "{name} holds their ground", "{name} declines"],
-  memories: [
-    "{name} flips through memories",
-    "{name} recalls a few things",
-    "{name} dredges up the past",
-  ],
+  consented: ["{name} agrees"],
+  refused: ["{name} refuses"],
 }
 
 function pickPhrase(phase: StatusPhase, name = ""): string {
