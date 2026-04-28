@@ -93,6 +93,7 @@ export function ScenarioPlay({
   )
   const [busy, setBusy] = useState(false)
   const [running, setRunning] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
   const [showLocations, setShowLocations] = useState(true)
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -275,6 +276,7 @@ export function ScenarioPlay({
     setError(null)
     setBusy(true)
     setPendingTurn(null)
+    setStatus(pickPhrase("picking"))
     const myGen = ++turnGenRef.current
     const controller = new AbortController()
     abortsRef.current.add(controller)
@@ -326,32 +328,43 @@ export function ScenarioPlay({
               intent: string
               speakerId: string | null
               targetIds?: string[]
-              type?: "REQUEST_CONSENT" | "SPEAK" | "ACT"
+              type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
             }
             const speakerName =
               characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
             const isRequest = p.type === "REQUEST_CONSENT"
+            setStatus(pickPhrase(intentPhase(p.type), speakerName))
             if (isRequest && showRequestInternals) {
               enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
             }
           } else if (event === "consent_request") {
-            // No live UI update; the discrete consent message renders the response.
+            const p = payload as { targetId: string; targetName: string }
+            setStatus(pickPhrase("consent", p.targetName))
           } else if (event === "consent_response") {
             const p = payload as {
               characterId: string
+              characterName?: string
               decision: "yes" | "no"
               feedback: string
             }
+            const target = characters.find((c) => c.id === p.characterId)
+            const targetName = p.characterName ?? target?.name ?? "Speaker"
+            setStatus(
+              pickPhrase(p.decision === "yes" ? "consented" : "refused", targetName),
+            )
             if (showRequestInternals) {
-              const target = characters.find((c) => c.id === p.characterId)
-              const targetName = target?.name ?? "Speaker"
               const verb = p.decision === "yes" ? "Consented" : "Refused"
               enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
             }
+          } else if (event === "memories_injected") {
+            const p = payload as { speakerId: string; count: number }
+            const name = characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
+            setStatus(pickPhrase("memories", name))
           } else if (event === "speaker") {
             const p = payload as SpeakerInfo
             speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
             setPendingTurn(speaker)
+            setStatus(pickPhrase("speaker", p.name))
             sentenceSpeakerRef.current = null
             if (
               voiceEnabled &&
@@ -373,6 +386,7 @@ export function ScenarioPlay({
             const next: PendingTurn = { ...current, content: current.content + delta }
             speaker = next
             setPendingTurn(next)
+            setStatus(null)
             sentenceSpeakerRef.current?.push(next.content)
           } else if (event === "message") {
             const message = payload as Message
@@ -400,6 +414,7 @@ export function ScenarioPlay({
           } else if (event === "done") {
             // Visible work is done — let the auto-loop start the next turn
             // while post-tasks (memory/name extraction) finish on this stream.
+            setStatus(null)
             fireVisibleDone()
           } else if (event === "memory_learned") {
             if (showMemories) refreshSceneMemories()
@@ -424,6 +439,7 @@ export function ScenarioPlay({
       if (turnGenRef.current === myGen) {
         setBusy(false)
         setPendingTurn(null)
+        setStatus(null)
       }
       fireVisibleDone()
     }
@@ -465,6 +481,7 @@ export function ScenarioPlay({
     abortsRef.current.clear()
     setBusy(false)
     setPendingTurn(null)
+    setStatus(null)
     sentenceSpeakerRef.current = null
     resetTtsQueue()
     if (audioRef.current) {
@@ -553,6 +570,7 @@ export function ScenarioPlay({
               </div>
             </div>
           )}
+          {status && busy && <StatusPill text={status} />}
         </div>
         {showMemories && (
           <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">
@@ -833,6 +851,89 @@ function ConsentNote({ consent }: { consent: ConsentEvent }) {
     <div className={`rounded-md border border-dashed px-3 py-2 text-xs ${colorClass}`}>
       <span className="font-medium">{consent.targetName}</span> {decisionLabel}
       {consent.feedback && <span className="italic">: {consent.feedback}</span>}
+    </div>
+  )
+}
+
+type StatusPhase =
+  | "picking"
+  | "speaker"
+  | "request"
+  | "speak"
+  | "act"
+  | "move"
+  | "consent"
+  | "consented"
+  | "refused"
+  | "memories"
+
+function intentPhase(type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"): StatusPhase {
+  if (type === "REQUEST_CONSENT") return "request"
+  if (type === "SPEAK") return "speak"
+  if (type === "MOVE") return "move"
+  return "act"
+}
+
+const STATUS_PHRASES: Record<StatusPhase, string[]> = {
+  picking: [
+    "Spotting who steps up next",
+    "Scanning the room for a volunteer",
+    "Choosing whose turn it is",
+  ],
+  speaker: [
+    "{name} gathers their thoughts",
+    "{name} takes a breath",
+    "{name} steps forward",
+  ],
+  request: [
+    "{name} floats a bold idea",
+    "{name} reaches across the scene",
+    "{name} asks for permission",
+  ],
+  speak: [
+    "{name} finds the right words",
+    "{name} drafts a line",
+    "{name} weighs what to say",
+  ],
+  act: [
+    "{name} settles on a beat",
+    "{name} plans a small move",
+    "{name} chooses an action",
+  ],
+  move: [
+    "{name} eyes the door",
+    "{name} considers a different room",
+    "{name} weighs the journey",
+  ],
+  consent: [
+    "{name} mulls it over",
+    "{name} reads the room",
+    "{name} weighs the offer",
+  ],
+  consented: ["{name} agrees", "{name} goes along with it", "{name} nods yes"],
+  refused: ["{name} pushes back", "{name} holds their ground", "{name} declines"],
+  memories: [
+    "{name} flips through memories",
+    "{name} recalls a few things",
+    "{name} dredges up the past",
+  ],
+}
+
+function pickPhrase(phase: StatusPhase, name = ""): string {
+  const pool = STATUS_PHRASES[phase]
+  const template = pool[Math.floor(Math.random() * pool.length)]
+  return template.replace("{name}", name)
+}
+
+function StatusPill({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-dashed border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground italic w-fit">
+      <span className="flex gap-0.5" aria-hidden>
+        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce" />
+      </span>
+      <span>{text}…</span>
     </div>
   )
 }
