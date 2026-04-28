@@ -1,5 +1,7 @@
 "use client"
 
+import { ChevronRight } from "lucide-react"
+import { useState } from "react"
 import {
   Select,
   SelectContent,
@@ -29,6 +31,7 @@ export default function SettingsPage() {
     learnNames,
     setLearnNames,
   } = useSettings()
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
@@ -147,12 +150,29 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Webhooks</h2>
-        <p className="text-sm text-muted-foreground">
-          Receive HTTP callbacks when scenes, characters, locations, messages, memories, or settings
-          change. Useful for syncing with external tools or automating side-effects.
-        </p>
-        <WebhooksManager />
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          aria-expanded={advancedOpen}
+          className="flex w-full items-center gap-2 text-lg font-semibold cursor-pointer"
+        >
+          <ChevronRight
+            className={`size-5 transition-transform ${advancedOpen ? "rotate-90" : ""}`}
+          />
+          Advanced
+        </button>
+        {advancedOpen && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="font-medium">Webhooks</h3>
+              <p className="text-sm text-muted-foreground">
+                Receive HTTP callbacks when scenes, characters, locations, messages, memories, or
+                settings change. Useful for syncing with external tools or automating side-effects.
+              </p>
+            </div>
+            <WebhooksManager />
+          </div>
+        )}
       </section>
     </div>
   )
