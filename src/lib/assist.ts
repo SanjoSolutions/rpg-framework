@@ -11,28 +11,28 @@ const FIELDS: Record<AssistEntityType, Record<string, FieldDescriptor>> = {
   character: {
     name: {
       label: "Name",
-      guidance: "A short proper name (1–3 words). Output only the name itself.",
+      guidance: "A short proper name (1–3 words). Output the name itself.",
     },
     appearance: {
       label: "Appearance",
       guidance:
-        "Only what others see at a glance: physical traits, clothing, posture, demeanor. NO inner traits, history, or motivations — those belong in Description. One short paragraph.",
+        "What others see at a glance: physical traits, clothing, posture, demeanor. Inner traits, history, and motivations belong in Description. One short paragraph.",
     },
     description: {
       label: "Description",
       guidance:
-        "Everything not visible on the surface: personality, mannerisms, voice, mood, motivations, beliefs, history, secrets, relationships, and anything else worth knowing about this character. One or two short paragraphs.",
+        "The interior view: personality, mannerisms, voice, mood, motivations, beliefs, history, secrets, relationships, and anything else worth knowing about this character. One or two short paragraphs.",
     },
     voice: {
       label: "Voice id",
       guidance:
-        "A single xAI TTS voice id token (e.g. 'Eve', 'Rex'). Output only the id, no punctuation.",
+        "A single xAI TTS voice id token (e.g. 'Eve', 'Rex'). Output the bare id.",
     },
   },
   location: {
     name: {
       label: "Name",
-      guidance: "A short evocative name for the place (1–4 words). Output only the name.",
+      guidance: "A short evocative name for the place (1–4 words). Output the name.",
     },
     description: {
       label: "Description",
@@ -43,7 +43,7 @@ const FIELDS: Record<AssistEntityType, Record<string, FieldDescriptor>> = {
   scenario: {
     name: {
       label: "Name",
-      guidance: "A short evocative title for the scenario (1–6 words). Output only the title.",
+      guidance: "A short evocative title for the scenario (1–6 words). Output the title.",
     },
     summary: {
       label: "Summary",
@@ -78,7 +78,7 @@ export async function generateFieldProposal(args: AssistArgs): Promise<string> {
     `You are writing the "${fieldDef.label}" field of a ${args.entityType}.`,
     `Field guidance: ${fieldDef.guidance}`,
     "Keep tone consistent with the entity's other fields.",
-    "Output ONLY the new field content. No preamble, no field labels, no quotes, no commentary, no markdown fences.",
+    "Output the new field content as raw text.",
   ].join(" ")
 
   const prompt = [
@@ -105,7 +105,7 @@ function formatEntity(type: AssistEntityType, entity: Record<string, unknown>): 
   for (const [key, def] of Object.entries(fieldDefs)) {
     const value = entity[key]
     if (value == null || value === "") {
-      lines.push(`- ${def.label}: (empty)`)
+      lines.push(`- ${def.label}: (pending)`)
     } else if (Array.isArray(value)) {
       lines.push(`- ${def.label}: ${value.join(", ")}`)
     } else {

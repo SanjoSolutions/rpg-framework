@@ -41,7 +41,7 @@ function shiftMarkdownHeadings(text: string, minLevel: number): string {
 }
 
 function describeLocation(location: Location | null): string {
-  if (!location) return "(no location set)"
+  if (!location) return "(location pending)"
   const parts = [`Name: ${location.name}`]
   if (location.description.trim()) {
     parts.push(`Description: ${shiftMarkdownHeadings(location.description, 3)}`)
@@ -65,10 +65,10 @@ function describeCharacterAcquaintance(character: Character): string {
   parts.push(
     character.appearance.trim()
       ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
-      : "Appearance: (nothing notable to your eye)",
+      : "Appearance: (a plain figure to your eye)",
   )
   parts.push(
-    "(You know them by name from before. Their inner self is still their own — you only observe what they say and do.)",
+    "(You know them by name from before. Their inner self is still their own — you observe what they say and do.)",
   )
   return parts.join("\n")
 }
@@ -78,10 +78,10 @@ function describeCharacterRecognized(character: Character, alias: string): strin
   parts.push(
     character.appearance.trim()
       ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
-      : "Appearance: (nothing notable to your eye)",
+      : "Appearance: (a plain figure to your eye)",
   )
   parts.push(
-    "(You've encountered them before but never learned their name. Their inner self is still unknown to you.)",
+    "(You have encountered them before. Their name and inner self remain a mystery to you.)",
   )
   return parts.join("\n")
 }
@@ -91,9 +91,9 @@ function describeCharacterStranger(character: Character, alias: string): string 
   parts.push(
     character.appearance.trim()
       ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
-      : "Appearance: (nothing notable to your eye)",
+      : "Appearance: (a plain figure to your eye)",
   )
-  parts.push("(Their name and inner self are unknown to you — learn through interaction.)")
+  parts.push("(Their name and inner self are a mystery to you — learn through interaction.)")
   return parts.join("\n")
 }
 
@@ -118,7 +118,7 @@ export function buildAliasMap(
 }
 
 function buildHistory(messages: Message[], aliases: Map<string, string> | null): string {
-  if (messages.length === 0) return "(no prior turns yet)"
+  if (messages.length === 0) return "(the scene begins here)"
   return messages
     .map((m) => {
       if (m.speakerKind === "narrator") return `[${m.speakerName || "Narrator"}]: ${m.content}`
@@ -160,9 +160,9 @@ function baseSceneBlock(
               : describeCharacterStranger(c, alias)
           })
           .join("\n\n")
-      : "(no characters in this scenario yet)"
+      : "(this scenario awaits its cast)"
   const rawSummary = context.scenario.summary.trim()
-  const summary = rawSummary ? shiftMarkdownHeadings(rawSummary, 2) : "(no scenario summary)"
+  const summary = rawSummary ? shiftMarkdownHeadings(rawSummary, 2) : "(scenario summary pending)"
   const sections = [
     `# Scenario: ${context.scenario.name}`,
     `Summary: ${summary}`,
@@ -247,9 +247,9 @@ export async function pickNextSpeaker(args: {
   const system = [
     "You are the director of a collaborative roleplay scene.",
     "Choose which of the listed characters should speak or act next, based on the recent transcript.",
-    "If exactly one character is the natural choice, output only that character's id.",
+    "If exactly one character is the natural choice, output that character's id.",
     "If multiple characters could plausibly take the next turn, output a comma-separated list of their ids — one will be chosen at random.",
-    "Output strictly the ids, with no prose, no quotes, and no explanation.",
+    "The output is the bare ids themselves.",
   ].join(" ")
 
   const prompt = [
@@ -438,27 +438,27 @@ export async function proposeIntent(args: {
             }
             return lines
           }),
-          "Use the feedback above to choose something DIFFERENT now. Either a new physical action they would actually consent to, OR a non-physical action (talking, gesturing, leaving — INVOLVES: NONE). Do NOT repeat any refused intent.",
+          "Use the feedback above to choose something DIFFERENT now. Pick either a fresh physical action they would consent to, OR a verbal/social action (talking, gesturing, leaving — INVOLVES: NONE). Each turn deserves a fresh intent.",
         ].join("\n")
       : ""
 
   const system = [
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
-    `"I"/"me"/"my"/"myself" must refer to you, ${speaker.name}. Never write your own name ("${speaker.name}") in INTENT — that would mean talking about yourself in the third person, which signals you've confused yourself with another character. The roster below lists OTHER characters; "${speaker.name}" is NOT in it.`,
-    "The action is yours alone — don't describe what anyone else does.",
+    `Keep your INTENT in first person: "I"/"me"/"my"/"myself" refers to you, ${speaker.name}. Third-person mention of "${speaker.name}" would signal another character. The roster below lists the OTHER characters present.`,
+    "The action belongs to you — describe what you yourself do.",
     "Pick exactly one of four turn TYPES:",
     "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
     "  • SPEAK — you say something out loud. Write INTENT as the spoken line wrapped in double quotes, optionally followed by a brief tag. Examples: \"Where are we going?\" or \"Get out,\" I tell her, my voice level. Talking, asking, demanding, ordering, threatening, whispering, shouting all count as SPEAK. INVOLVES: NONE.",
-    "  • ACT — solo non-contact action: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon (without striking). Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
-    "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); INVOLVES: NONE if you're going alone.",
+    "  • ACT — a solo move: walk, look, gesture, point, reach for an object, sit, stand, draw a weapon. Your body moves in its own space. Write INTENT as \"I <verb> ...\". INVOLVES: NONE.",
+    "  • MOVE — you leave the current location for another known one, optionally bringing other present characters with you. Write INTENT as \"I head to <place>...\". Set DESTINATION to the destination location's id from the list below. List the characters you'd take along in INVOLVES (they will be asked for consent); use INVOLVES: NONE for solo travel.",
     "Speaking is just as valid as moving — pick SPEAK whenever a line of dialogue would advance the scene more than another action.",
     "Any [Director] line in the transcript is authoritative out-of-character direction from the user steering the scene. Let it guide your TYPE and INTENT this turn.",
-    "INVOLVES means: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent). Speaking to/about/at them does NOT involve them. Naming them in your sentence does NOT involve them.",
-    "Output strictly in this format and nothing else:",
+    "INVOLVES contains: for REQUEST_CONSENT, characters whose BODY your action physically contacts; for MOVE, characters you'd take along (they must consent).",
+    "Use this exact format:",
     "TYPE: <REQUEST_CONSENT or SPEAK or ACT or MOVE>",
     "INTENT: <one sentence>",
     "INVOLVES: <comma-separated character ids, or NONE>",
-    "DESTINATION: <location id from the list, only when TYPE is MOVE; otherwise NONE>",
+    "DESTINATION: <location id from the list when TYPE is MOVE; NONE in other cases>",
   ].join("\n")
 
   const destinationsBlock =
@@ -467,7 +467,7 @@ export async function proposeIntent(args: {
           "## Other known locations (eligible MOVE destinations)",
           destinations.map((l) => `- ${l.name} (id: ${l.id})`).join("\n"),
         ].join("\n")
-      : "## Other known locations\n(none — MOVE is not available)"
+      : "## Other known locations\n(roster pending; choose SPEAK, ACT, or REQUEST_CONSENT this turn)"
 
   const history: ChatMessage[] = messages.map((m) => {
     if (m.speakerKind === "user") {
@@ -619,16 +619,15 @@ export async function extractMemoriesFromTurn(args: {
 
   const system = [
     `You extract long-term memories worth keeping for ${speaker.name}, from their first-person POV.`,
-    `Focus ONLY on things that would still matter to ${speaker.name} days, weeks, or scenes from now — durable facts that shape future decisions or relationships.`,
+    `Focus on things that would still matter to ${speaker.name} days, weeks, or scenes from now — durable facts that shape future decisions or relationships.`,
     "GOOD candidates: someone's name once revealed, a confided secret, a past event in their life, a stated goal or fear, a strong-held opinion or value, a promise made or broken, a bond formed, a betrayal, a learned skill or fact about the world, a permanent change in the relationship.",
-    "BAD candidates (do NOT extract): what someone is wearing or doing right now, fleeting moods, who blushed or laughed, immediate physical sensations, current location detail, restating the scene setup, generic observations, anything that will be irrelevant by next scene.",
-    "Be conservative — most turns produce zero memories. Only extract when there is something genuinely durable.",
+    "Be conservative — most turns produce zero memories. Extract when there is something genuinely durable.",
     "Each memory: ONE short sentence in third person from the rememberer's perspective.",
-    "When referring to ANY character (including the rememberer themselves) inside the memory text, ALWAYS use the placeholder syntax `[char:<id>]` with the character's id from the roster — never their bare name. Example: '[char:c1] fled the capital after a falling-out with her family'.",
+    "When referring to ANY character (including the rememberer themselves) inside the memory text, ALWAYS use the placeholder syntax `[char:<id>]` with the character's id from the roster. Example: '[char:c1] fled the capital after a falling-out with her family'.",
     "For each memory, also list which other character(s) it is about (using their ids from the roster, or NONE), and whether it is meaningfully tied to the current location (YES or NO).",
-    "Output strictly in this format, one memory per line, no preamble:",
+    "Use this format, one memory per line:",
     "1. <memory using [char:<id>] placeholders> | characters: <ids or NONE> | location: <YES or NO>",
-    "If there is nothing worth remembering long-term, output exactly: NONE",
+    "For an ephemeral turn, output exactly: NONE",
   ].join("\n")
 
   const prompt = [
@@ -699,7 +698,7 @@ export async function extractNameLearningsFromTurn(args: {
       const knower = characterById.get(p.knowerId)
       const known = characterById.get(p.knownId)
       if (!knower || !known) return null
-      return `- ${knower.name} (id: ${p.knowerId}) does NOT yet know ${known.name} (id: ${p.knownId}) by name`
+      return `- For ${knower.name} (id: ${p.knowerId}), ${known.name}'s name (id: ${p.knownId}) remains a mystery`
     })
     .filter((s): s is string => s != null)
     .join("\n")
@@ -715,22 +714,22 @@ export async function extractNameLearningsFromTurn(args: {
 
   const system = [
     "You decide which characters newly LEARNED the NAME of another character from the recent turn(s).",
-    "A name is learned only if it was actually spoken or unmistakably revealed in a way the listener heard and understood (e.g. someone introduces themselves, someone addresses another by name within earshot, a name is read off a badge or document).",
-    "Be conservative. If a name was merely mentioned in passing without context, or the speaker was not within hearing distance, or the reference is ambiguous, DO NOT mark it as learned.",
-    "Names referenced in pure narration (without a character actually saying or revealing them in-scene) do NOT count.",
-    "Output strictly one line per newly-learned name, in this exact format:",
+    "A name counts as learned when it was actually spoken or clearly revealed in a way the listener heard and understood (e.g. someone introduces themselves, someone addresses another by name within earshot, a name is read off a badge or document).",
+    "Be conservative. Mark a learning when context made the name clear, the speaker was within earshot, and the reference was specific.",
+    "Names from pure narration count when a character actually says or reveals them in-scene.",
+    "Use one line per newly-learned name, in this format:",
     "1. <knower_id> -> <known_id>",
-    "If nothing was learned, output exactly: NONE",
+    "For a turn that yields zero learnings, output exactly: NONE",
   ].join("\n")
 
   const prompt = [
     `## Roster (all characters present)`,
     roster,
-    `## Pairs that did NOT know each other's names before this turn`,
+    `## Pairs where the knower held the other's name as a mystery before this turn`,
     pairList,
     `## Recent turn(s)`,
     transcript,
-    "Which of the listed pairs are now learned? List only pairs from the list above that were actually revealed in the transcript.",
+    "Which of the listed pairs are now learned? List pairs from the list above that were actually revealed in the transcript.",
   ].join("\n\n")
 
   const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
@@ -768,12 +767,12 @@ export async function requestConsent(args: {
     target.description.trim()
       ? `Description: ${shiftMarkdownHeadings(target.description, 2)}`
       : "",
-    `${speakerLabel} is about to act on you in the scene. You are the RECIPIENT, not the actor — ${speakerLabel} performs the action; you only decide whether to allow it.`,
-    `The proposed action below is written in ${speakerLabel}'s own first-person voice. Any "I", "me", or "my" in it refers to ${speakerLabel}, NEVER to you. You will not carry out the action — ${speakerLabel} will.`,
-    "Refuse if your character would not want this done to them, given who they are, the situation, and what just happened.",
-    "Output strictly in this format and nothing else:",
+    `${speakerLabel} is about to act on you in the scene. You are the RECIPIENT — ${speakerLabel} performs the action; your part is to decide whether to allow it.`,
+    `The proposed action below is written in ${speakerLabel}'s own first-person voice. Any "I", "me", or "my" in it refers to ${speakerLabel}. You remain the recipient — ${speakerLabel} carries the action out.`,
+    "Refuse if your character would object to having this done to them, given who they are, the situation, and what just happened.",
+    "Use this exact format:",
     "DECISION: YES or NO",
-    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character feedback on the proposed action, which they will receive before they take their turn so they can adjust. Not spoken aloud in the scene; treat it as out-of-character signaling between characters.>`,
+    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character feedback on the proposed action, which they will receive before they take their turn so they can adjust. Kept silent in the scene; treat it as a backchannel signal between characters.>`,
   ]
     .filter(Boolean)
     .join("\n")
@@ -785,7 +784,7 @@ export async function requestConsent(args: {
       povMetIds: metIds,
     }),
     `## Proposed action — by ${speakerLabel}, toward you`,
-    `${speakerLabel}'s own words ("I" = ${speakerLabel}, not you):`,
+    `${speakerLabel}'s own words ("I" = ${speakerLabel}):`,
     `> ${intent}`,
     `Decide whether you, ${target.name}, allow ${speakerLabel} to do this to you. Now give your DECISION and REASON.`,
   ].join("\n\n")
@@ -829,9 +828,9 @@ export async function requestMoveConsent(args: {
       : "",
     `${speakerLabel} is leaving the current scene for ${destinationName} and has asked you to come along.`,
     "Decide whether your character would actually go with them, given who you are, your current goals, and what just happened.",
-    "Output strictly in this format and nothing else:",
+    "Use this exact format:",
     "DECISION: YES or NO",
-    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character reply to the invitation. Treat it as out-of-character signaling between characters.>`,
+    `FEEDBACK: <one short sentence addressed to ${speakerLabel} — your in-character reply to the invitation. Treat it as a backchannel signal between characters.>`,
   ]
     .filter(Boolean)
     .join("\n")
@@ -898,8 +897,8 @@ export async function pickFulfillers(args: {
 
   const system = [
     "You direct who acts to fulfill a consented request, and in what order.",
-    "List only the characters who need to physically act for the request to be carried out, in the order they should act. Skip anyone whose role is purely passive.",
-    "Output ordered character ids, one per line, with no prose.",
+    "List the characters who need to physically act for the request to be carried out, in the order they should act. Limit the list to active participants.",
+    "Output ordered character ids as plain text, one per line.",
   ].join("\n")
 
   const prompt = [
@@ -942,8 +941,8 @@ export async function generateFulfillmentMessage(args: {
   const system = [
     `You are ${fulfiller.name}.`,
     `${speakerLabel} requested: "${intent}". The request has been consented to by everyone involved.`,
-    `Write ONE short first-person sentence describing what you (${fulfiller.name}) do to carry out your part. "I"/"my" must refer to you, ${fulfiller.name}. Never write your own name ("${fulfiller.name}") — if the request describes an action being done TO you, write what YOU do (e.g. submit, brace, comply), not what is done to you.`,
-    "Just the sentence. No preamble, no quotes, no label.",
+    `Write ONE short first-person sentence describing what you (${fulfiller.name}) do to carry out your part. "I"/"my" refers to you, ${fulfiller.name}. Keep the sentence in first person — third-person mention of "${fulfiller.name}" would mean another speaker. If the request describes an action being done TO you, write what YOU do (e.g. submit, brace, comply); keep the focus on your own action.`,
+    "The output is the sentence itself, as bare prose.",
   ].join("\n")
 
   const prompt = [
@@ -993,27 +992,20 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           .filter((c) => c.id !== character.id)
           .map((c) => labelFor(c.id, c.name, aliases!))
       : []
-  const labelExample =
-    character != null
-      ? otherAliases.length > 0
-        ? `(e.g. "${character.name}: " or "${otherAliases[0]}: ")`
-        : `(e.g. "${character.name}: ")`
-      : ""
   const othersList = otherAliases.join(" or ")
   const otherCharactersRules =
     otherAliases.length > 0
       ? [
-          `STRICT — write ONLY your own dialogue and actions. Your turn ends the instant your own action ends.`,
-          `${othersList} are NOT yours to write. Not a word of their speech, not a sound, not a thought, not a feeling, not a gesture (no nods, smiles, blushes, gasps, sighs, glances), not a reaction — not even a reaction to what you just did. Their responses belong to THEIR next turn.`,
-          `Concrete contrast — if your action is reaching for her hand:\n  WRONG: "I reach for her hand. She lets me take it, her fingers warm against mine."\n  WRONG: "I reach for her hand and she pulls away with a frown."\n  RIGHT: "I reach for her hand."\nStop where the RIGHT example stops. Every time.`,
+          `STRICT — your dialogue and actions are what you write. Your turn ends the instant your own action ends.`,
+          `${othersList} are theirs to write. Their speech, sounds, thoughts, feelings, gestures (nods, smiles, blushes, gasps, sighs, glances), and reactions — including reactions to what you just did — all belong to THEIR next turn.`,
+          `Stop the moment your own action ends — any response by the other character belongs to their own next turn.`,
         ]
       : []
 
   const oneActionRule = [
-    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
-    "Write only what is objectively visible or audible in the scene: physical actions you perform and words you say aloud. Nothing else.",
-    "No internal monologue, no thoughts, no feelings, no urges, no awareness, no perception, no sensation. Banned phrasings include but are not limited to: \"I find myself ...\", \"I feel ...\", \"I notice ...\", \"I sense ...\", \"I want ...\", \"I'm aware ...\", \"part of me ...\", \"something in me ...\". If a sentence describes anything happening inside your head or body that an outside observer couldn't see or hear, delete it.",
-    "Stay inside the scene. No meta-commentary, no addressing the reader, no scene-boundary markers ('end of scene', 'fade to black', 'to be continued'), no recap of what just happened, no questions to the user about what to do next.",
+    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want; one move per turn. Crossing the room, then pouring a drink, then sitting down counts as three turns. Stop after the first action.",
+    "Write what is objectively visible or audible in the scene: physical actions you perform and words you say aloud. That is the scope.",
+    "Stay inside the scene, in the present moment, addressing the other characters with current action and current dialogue.",
   ]
 
   const refusalLines = (refusals ?? [])
@@ -1027,30 +1019,30 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     refusalLines.length > 0
       ? [
           intentLine,
-          "The following characters did NOT consent, so you cannot carry the intent out as stated:",
+          "The following characters refused consent. The intent now needs a different form:",
           refusalLines,
-          "Your turn must still REVOLVE around this intent. React to the block in character — voice your reaction, push back verbally, change tack, withdraw, or pivot to a verbal alternative — but stay on the subject of the intent. Do not drift to an unrelated topic or invent a different action.",
+          "Your turn must still REVOLVE around this intent. React to the block in character — voice your reaction, push back verbally, change tack, withdraw, or pivot to a verbal alternative — and stay on the subject of the intent. Keep your turn rooted in this topic.",
         ]
           .filter(Boolean)
           .join("\n")
       : intent?.trim()
         ? [
             intentLine,
-            "All affected characters consented. Your turn ENACTS this intent — that specific action is the point of your reply, what you actually deliver. You may surround it with a few words of spoken dialogue, but the negotiated intent must be what your message is about. Do not substitute an unrelated action or skip past it.",
+            "All affected characters consented. Your turn ENACTS this intent — that specific action is the point of your reply, what you actually deliver. You may surround it with a few words of spoken dialogue, keeping the negotiated intent as the heart of your message. Deliver the intent itself.",
           ].join("\n")
         : ""
 
   const ruleLines =
     character != null
       ? [
-          "This is a back-and-forth exchange between characters, not a story you're writing alone. Your turn is one short beat — speak or act, then stop and let the next character respond. Don't compose a paragraph that wraps up the moment.",
+          "This is a back-and-forth exchange between characters, with each contributing one beat at a time. Your turn is one short beat — speak or act, then stop and let the next character respond. One beat per turn.",
           ...otherCharactersRules,
           ...oneActionRule,
-          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
-          "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character — no acknowledgement, no meta reference to it.",
-          `NEVER prefix your reply with a name or label ${labelExample}, and never with "[Director]:" or any other bracketed tag. Just write your reply directly.`,
-          "NEVER emit a [Director] line, [Director: ...] block, or any bracketed stage-direction/meta tag anywhere in your reply — not at the start, not at the end, not inline. Director lines come FROM the user TO you; you do not write them. Do not narrate your own intentions in third person or as a director would (e.g. \"She decides to walk over\", \"Lira wants to ...\"). You write only your character's first-person actions and spoken words.",
-          "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
+          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action, all of it yours.",
+          "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character; the scene itself is your frame of reference.",
+          `Begin your reply with the first word of in-character speech or narration. The reply itself is the entire output: bare prose, starting with your character's words or actions.`,
+          "Director lines come FROM the user TO you, so they remain the user's to write. You write your character's first-person actions and spoken words.",
+          "You know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (their appearance, their voice, where they came from). Stranger names emerge through interaction.",
         ].filter(Boolean)
       : []
 
@@ -1088,7 +1080,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const memoryBlock = memoryLines
     ? [
         `# What you remember`,
-        "Things you (and only you) remember from past scenes. Use them naturally — don't list them, don't reveal them mechanically.",
+        "Things from past scenes that live in your memory. Use them naturally; let them shape what you say and do.",
         memoryLines,
       ].join("\n")
     : ""
@@ -1101,7 +1093,8 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       : [
           "You are the omniscient narrator of the scene.",
           "Describe what happens next: setting changes, atmosphere, brief actions of present characters.",
-          "Keep it short. Do not put words into characters' mouths.",
+          "Keep it short. Leave dialogue to the characters themselves.",
+          "Stay focused on observable scene-level events.",
         ].join("\n")
 
   const system = [
