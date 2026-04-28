@@ -26,6 +26,14 @@ interface Row {
   created_at: number
 }
 
+let lastCreatedAt = 0
+
+function nextCreatedAt(): number {
+  const now = Date.now()
+  lastCreatedAt = now > lastCreatedAt ? now : lastCreatedAt + 1
+  return lastCreatedAt
+}
+
 function rowToMessage(row: Row): Message {
   return {
     id: row.id,
@@ -71,7 +79,7 @@ export function appendMessage(input: MessageInput): Message {
     speakerName: input.speakerName,
     content: input.content,
     kind: input.kind ?? null,
-    createdAt: Date.now(),
+    createdAt: nextCreatedAt(),
   }
   getDb()
     .prepare(
