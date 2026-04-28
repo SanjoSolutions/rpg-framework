@@ -287,14 +287,16 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex items-center justify-between">
-        <Button type="submit" disabled={submitting}>
-          {mode === "create" ? "Create" : "Save"}
-        </Button>
-        {mode === "edit" && (
+        {mode === "edit" ? (
           <Button type="button" variant="destructive" onClick={onDelete} disabled={submitting}>
             Delete
           </Button>
+        ) : (
+          <span />
         )}
+        <Button type="submit" disabled={submitting}>
+          {mode === "create" ? "Create" : "Save"}
+        </Button>
       </div>
     </form>
   )
