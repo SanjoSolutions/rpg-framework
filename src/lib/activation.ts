@@ -129,12 +129,18 @@ export async function verifyAndActivate(accessToken: string): Promise<Activation
   return saveActivation(accessToken)
 }
 
+const REVERIFY_BACKOFF_BASE_MS = 60 * 1000
+const REVERIFY_BACKOFF_MAX_MS = 60 * 60 * 1000
+
 let inFlightReverify: Promise<boolean> | null = null
+let consecutiveFailures = 0
+let nextAttemptAt = 0
 
 export async function ensureFreshActivation(): Promise<boolean> {
   const activation = getValidActivation()
   if (!activation) return false
   if (isFresh(activation)) return true
+  if (Date.now() < nextAttemptAt) return true
   if (!inFlightReverify) {
     inFlightReverify = (async () => {
       try {
@@ -145,9 +151,20 @@ export async function ensureFreshActivation(): Promise<boolean> {
           return false
         }
         touchVerified()
+        consecutiveFailures = 0
+        nextAttemptAt = 0
         return true
       } catch (err) {
-        logger.warn({ err }, "itch.io re-verify failed; keeping current activation")
+        consecutiveFailures += 1
+        const delayMs = Math.min(
+          REVERIFY_BACKOFF_BASE_MS * 2 ** (consecutiveFailures - 1),
+          REVERIFY_BACKOFF_MAX_MS,
+        )
+        nextAttemptAt = Date.now() + delayMs
+        logger.warn(
+          { err, consecutiveFailures, retryInMs: delayMs },
+          "itch.io re-verify failed; backing off",
+        )
         return true
       } finally {
         inFlightReverify = null
