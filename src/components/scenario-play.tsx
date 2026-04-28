@@ -151,6 +151,21 @@ export function ScenarioPlay({
   }
 
   useEffect(() => {
+    if (voiceEnabled) return
+    ttsTokenRef.current++
+    ttsChainRef.current = Promise.resolve()
+    sentenceSpeakerRef.current = null
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ""
+      audioRef.current = null
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel()
+    }
+  }, [voiceEnabled])
+
+  useEffect(() => {
     fetch("/api/tts/health")
       .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : { available: false }))
       .then((d) => setServerTtsAvailable(d.available))
