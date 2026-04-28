@@ -1079,6 +1079,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const oneActionRule = [
     "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
     "No internal monologue. Skip thoughts, feelings, motivations, and reflection — write only what you say and do, what others in the scene can see and hear.",
+    "Stay inside the scene. No meta-commentary, no addressing the reader, no scene-boundary markers ('end of scene', 'fade to black', 'to be continued'), no recap of what just happened, no questions to the user about what to do next.",
   ]
 
   const refusalLines = (refusals ?? [])
@@ -1108,6 +1109,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const ruleLines =
     character != null
       ? [
+          "This is a back-and-forth exchange between characters, not a story you're writing alone. Your turn is one short beat — speak or act, then stop and let the next character respond. Don't compose a paragraph that wraps up the moment.",
           ...otherCharactersRules,
           ...oneActionRule,
           "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
