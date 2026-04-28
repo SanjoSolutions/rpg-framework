@@ -12,6 +12,8 @@ const baseScenario: Scenario = {
   characterIds: [],
   locationIds: [],
   characterLocations: {},
+  transcriptSummary: "",
+  transcriptSummaryCount: 0,
   createdAt: 0,
   updatedAt: 0,
 }

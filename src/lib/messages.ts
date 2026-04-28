@@ -99,12 +99,25 @@ export function appendMessage(input: MessageInput): Message {
 }
 
 export function deleteMessage(id: string): boolean {
-  const result = getDb().prepare("DELETE FROM messages WHERE id = ?").run(id)
+  const db = getDb()
+  const row = db
+    .prepare("SELECT scenario_id FROM messages WHERE id = ?")
+    .get(id) as { scenario_id: string } | undefined
+  const result = db.prepare("DELETE FROM messages WHERE id = ?").run(id)
+  if (result.changes > 0 && row) {
+    db.prepare(
+      "UPDATE scenarios SET transcript_summary = '', transcript_summary_count = 0 WHERE id = ?",
+    ).run(row.scenario_id)
+  }
   return result.changes > 0
 }
 
 export function clearScenarioMessages(scenarioId: string): void {
-  getDb().prepare("DELETE FROM messages WHERE scenario_id = ?").run(scenarioId)
+  const db = getDb()
+  db.prepare("DELETE FROM messages WHERE scenario_id = ?").run(scenarioId)
+  db.prepare(
+    "UPDATE scenarios SET transcript_summary = '', transcript_summary_count = 0 WHERE id = ?",
+  ).run(scenarioId)
 }
 
 export interface ConsentEventMeta {

@@ -14,6 +14,8 @@ export interface Scenario {
   locationIds: string[]
   /** Per-character placement. Missing or null means: at scenario.locationId. */
   characterLocations: Record<string, string | null>
+  transcriptSummary: string
+  transcriptSummaryCount: number
   createdAt: number
   updatedAt: number
 }
@@ -28,6 +30,8 @@ interface Row {
   name: string
   summary: string
   location_id: string | null
+  transcript_summary: string
+  transcript_summary_count: number
   created_at: number
   updated_at: number
 }
@@ -76,9 +80,23 @@ function rowToScenario(row: Row): Scenario {
     characterIds,
     locationIds,
     characterLocations,
+    transcriptSummary: row.transcript_summary,
+    transcriptSummaryCount: row.transcript_summary_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+export function setScenarioTranscriptSummary(
+  scenarioId: string,
+  summary: string,
+  count: number,
+): void {
+  getDb()
+    .prepare(
+      "UPDATE scenarios SET transcript_summary = ?, transcript_summary_count = ? WHERE id = ?",
+    )
+    .run(summary, count, scenarioId)
 }
 
 export function listScenarios(): Scenario[] {

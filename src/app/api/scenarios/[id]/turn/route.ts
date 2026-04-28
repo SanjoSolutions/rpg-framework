@@ -16,6 +16,7 @@ import {
   type Memory,
 } from "@/lib/memories"
 import { appendMessage, listMessages } from "@/lib/messages"
+import { ensureTranscriptSummary } from "@/lib/transcript-summary"
 import {
   extractMemoriesFromTurn,
   extractNameLearningsFromTurn,
@@ -118,10 +119,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     }
   }
 
+  const transcriptSummary = await ensureTranscriptSummary({
+    backend,
+    scenario,
+    messages,
+    signal: request.signal,
+  })
+
   const speaker = await pickNextSpeaker({
     backend,
     context,
     messages,
+    summary: transcriptSummary,
     signal: request.signal,
   })
 
@@ -155,6 +164,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           refusals: args.refusals,
           memories: args.memories,
           knowledge: args.speakerId ? knowledgeFor(args.speakerId) : undefined,
+          summary: transcriptSummary,
           signal: request.signal,
           onText: (chunk) => {
             buffered += chunk
@@ -219,6 +229,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               destinations: otherLocations,
               knowledge: knowledgeFor(speakerCharacter.id),
               allowRequestConsent: false,
+              summary: transcriptSummary,
               signal: request.signal,
             })
             intent = proposal.intent
@@ -285,6 +296,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 destinations: otherLocations,
                 knowledge: knowledgeFor(speakerCharacter.id),
                 previousAttempts,
+                summary: transcriptSummary,
                 signal: request.signal,
               })
               intent = proposal.intent
@@ -344,6 +356,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     speakerName: speaker.name,
                     intent: proposal.intent,
                     knowledge: knowledgeFor(target.id),
+                    summary: transcriptSummary,
                     signal: request.signal,
                   })
                   send("consent_response", { ...decision, attempt })
@@ -399,6 +412,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                       speakerName: speaker.name,
                       intent: proposal.intent,
                       knowledge: knowledgeFor(fulfiller.id),
+                      summary: transcriptSummary,
                       signal: request.signal,
                     })
                     if (!text) continue
@@ -470,6 +484,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     speakerName: speaker.name,
                     destinationName: destination.name,
                     knowledge: knowledgeFor(companion.id),
+                    summary: transcriptSummary,
                     signal: request.signal,
                   })
                   send("consent_response", { ...decision, attempt })

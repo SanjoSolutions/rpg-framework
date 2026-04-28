@@ -9,6 +9,7 @@ import {
 } from "./memories"
 import type { Message } from "./messages"
 import type { Scenario } from "./scenarios"
+import { RECENT_TRANSCRIPT_LIMIT } from "./transcript-summary"
 import {
   generateObject,
   generateOnce,
@@ -147,6 +148,7 @@ interface SceneBlockOpts {
   povCharacterId?: string | null
   povKnownNameIds?: ReadonlySet<string>
   povMetIds?: ReadonlySet<string>
+  summary?: string | null
 }
 
 function baseSceneBlock(
@@ -157,6 +159,7 @@ function baseSceneBlock(
   const povId = opts.povCharacterId ?? null
   const knownNameIds = opts.povKnownNameIds ?? new Set<string>()
   const metIds = opts.povMetIds ?? new Set<string>()
+  const transcriptSummary = opts.summary?.trim() ?? ""
   const aliases = povId ? buildAliasMap(context.characters, povId, knownNameIds) : null
 
   const characterBlock =
@@ -182,8 +185,12 @@ function baseSceneBlock(
     `## Characters present`,
     characterBlock,
   ]
+  if (transcriptSummary) {
+    sections.push(`## Earlier in the scene (summary)`, transcriptSummary)
+  }
   if (messages !== null) {
-    sections.push(`## Recent transcript`, buildHistory(messages, aliases))
+    const recent = messages.slice(-RECENT_TRANSCRIPT_LIMIT)
+    sections.push(`## Recent transcript`, buildHistory(recent, aliases))
   }
   return sections.join("\n\n")
 }
@@ -192,10 +199,11 @@ export async function pickNextSpeaker(args: {
   backend: LLMBackend
   context: SceneContext
   messages: Message[]
+  summary?: string
   signal?: AbortSignal
   rng?: () => number
 }): Promise<SpeakerSelection> {
-  const { context, messages } = args
+  const { context, messages, summary } = args
 
   if (context.characters.length === 0) {
     return { kind: "narrator", characterId: null, name: "Narrator" }
@@ -234,7 +242,7 @@ export async function pickNextSpeaker(args: {
   ].join(" ")
 
   const prompt = [
-    baseSceneBlock(context, messages),
+    baseSceneBlock(context, messages, { summary }),
     "## Roster (eligible speakers)",
     roster,
     "Pick one or more eligible character ids.",
@@ -323,9 +331,10 @@ export async function proposeIntent(args: {
   knowledge?: POVKnowledge
   previousAttempts?: PreviousAttempt[]
   allowRequestConsent?: boolean
+  summary?: string
   signal?: AbortSignal
 }): Promise<IntentProposal> {
-  const { backend, context, messages, speaker, previousAttempts } = args
+  const { backend, context, messages, speaker, previousAttempts, summary } = args
   const destinations = args.destinations ?? []
   const allowRequestConsent = args.allowRequestConsent ?? true
   const others = context.characters.filter((c) => c.id !== speaker.id)
@@ -405,7 +414,7 @@ export async function proposeIntent(args: {
         ].join("\n")
       : `## Other known locations\n(roster pending; choose ${allowRequestConsent ? "SPEAK, ACT, or REQUEST_CONSENT" : "SPEAK or ACT"} this turn)`
 
-  const history: ChatMessage[] = messages.map((m) => {
+  const history: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
     if (m.speakerKind === "user") {
       return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
     }
@@ -425,6 +434,7 @@ export async function proposeIntent(args: {
       povCharacterId: speaker.id,
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
+      summary,
     }),
     "## Roster (other characters present)",
     roster,
@@ -678,9 +688,10 @@ export async function requestConsent(args: {
   speakerName: string
   intent: string
   knowledge?: POVKnowledge
+  summary?: string
   signal?: AbortSignal
 }): Promise<ConsentDecision> {
-  const { backend, context, messages, target, speakerName, intent } = args
+  const { backend, context, messages, target, speakerName, intent, summary } = args
 
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
   const metIds = args.knowledge?.metIds ?? new Set<string>()
@@ -712,6 +723,7 @@ export async function requestConsent(args: {
       povCharacterId: target.id,
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
+      summary,
     }),
     `## Proposed action — by ${speakerLabel}, toward you`,
     `${speakerLabel}'s own words ("I" = ${speakerLabel}):`,
@@ -772,9 +784,10 @@ export async function requestMoveConsent(args: {
   speakerName: string
   destinationName: string
   knowledge?: POVKnowledge
+  summary?: string
   signal?: AbortSignal
 }): Promise<ConsentDecision> {
-  const { backend, context, messages, target, speakerName, destinationName } = args
+  const { backend, context, messages, target, speakerName, destinationName, summary } = args
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
   const metIds = args.knowledge?.metIds ?? new Set<string>()
   const speakerCharacter = context.characters.find((c) => c.name === speakerName)
@@ -804,6 +817,7 @@ export async function requestMoveConsent(args: {
       povCharacterId: target.id,
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
+      summary,
     }),
     `## Invitation — by ${speakerLabel}, to you`,
     `${speakerLabel} is heading to ${destinationName} and is asking you to come too.`,
@@ -888,9 +902,10 @@ export async function generateFulfillmentMessage(args: {
   speakerName: string
   intent: string
   knowledge?: POVKnowledge
+  summary?: string
   signal?: AbortSignal
 }): Promise<string> {
-  const { backend, context, messages, fulfiller, speakerName, intent } = args
+  const { backend, context, messages, fulfiller, speakerName, intent, summary } = args
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
   const metIds = args.knowledge?.metIds ?? new Set<string>()
   const aliases = buildAliasMap(context.characters, fulfiller.id, knownNameIds)
@@ -911,6 +926,7 @@ export async function generateFulfillmentMessage(args: {
       povCharacterId: fulfiller.id,
       povKnownNameIds: knownNameIds,
       povMetIds: metIds,
+      summary,
     }),
     `Now write what you do to fulfill the request "${intent}".`,
   ].join("\n\n")
@@ -930,12 +946,13 @@ export interface StreamCharacterTurnArgs {
   refusals?: ConsentRefusal[]
   memories?: Memory[]
   knowledge?: POVKnowledge
+  summary?: string
   signal?: AbortSignal
   onText: (chunk: string) => void
 }
 
 export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promise<void> {
-  const { context, messages, speaker, intent, refusals, memories } = args
+  const { context, messages, speaker, intent, refusals, memories, summary } = args
   const character =
     speaker.kind === "character"
       ? context.characters.find((c) => c.id === speaker.characterId) ?? null
@@ -1049,6 +1066,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     povCharacterId: character?.id ?? null,
     povKnownNameIds: knownNameIds,
     povMetIds: metIds,
+    summary,
   })
 
   const rulesBlock =
@@ -1066,7 +1084,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     .filter((s) => s.length > 0)
     .join("\n\n")
 
-  const chatMessages: ChatMessage[] = messages.map((m) => {
+  const chatMessages: ChatMessage[] = messages.slice(-RECENT_TRANSCRIPT_LIMIT).map((m) => {
     if (m.speakerKind === "user") {
       return { role: "user", content: `[${m.speakerName}]: ${m.content}` }
     }

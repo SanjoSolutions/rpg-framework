@@ -43,6 +43,8 @@ function applySchema(db: Database.Database): void {
       name TEXT NOT NULL,
       summary TEXT NOT NULL DEFAULT '',
       location_id TEXT,
+      transcript_summary TEXT NOT NULL DEFAULT '',
+      transcript_summary_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
@@ -183,6 +185,17 @@ function applySchema(db: Database.Database): void {
   const messageColumnNames = new Set(messageColumns.map((c) => c.name))
   if (!messageColumnNames.has("kind")) {
     db.exec("ALTER TABLE messages ADD COLUMN kind TEXT")
+  }
+
+  const scenarioColumns = db
+    .prepare("SELECT name FROM pragma_table_info('scenarios')")
+    .all() as { name: string }[]
+  const scenarioColumnNames = new Set(scenarioColumns.map((c) => c.name))
+  if (!scenarioColumnNames.has("transcript_summary")) {
+    db.exec("ALTER TABLE scenarios ADD COLUMN transcript_summary TEXT NOT NULL DEFAULT ''")
+  }
+  if (!scenarioColumnNames.has("transcript_summary_count")) {
+    db.exec("ALTER TABLE scenarios ADD COLUMN transcript_summary_count INTEGER NOT NULL DEFAULT 0")
   }
 
   const scenarioCharColumns = db
