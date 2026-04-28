@@ -93,6 +93,7 @@ export function ScenarioPlay({
   )
   const [busy, setBusy] = useState(false)
   const [running, setRunning] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [showLocations, setShowLocations] = useState(true)
   useEffect(() => {
@@ -222,6 +223,10 @@ export function ScenarioPlay({
   useEffect(() => {
     if (showMemories) refreshSceneMemories()
   }, [showMemories, refreshSceneMemories])
+
+  useEffect(() => {
+    if (!busy && !running) setStopping(false)
+  }, [busy, running])
 
   function speakerPrefix(characterId: string | null): string {
     if (!characterId) return ""
@@ -477,23 +482,11 @@ export function ScenarioPlay({
   }
 
   function stop() {
+    // Let the in-flight turn finish streaming; just signal "no more turns".
+    // The auto-loop checks runningRef after each turn and exits.
     runningRef.current = false
     setRunning(false)
-    for (const c of abortsRef.current) c.abort()
-    abortsRef.current.clear()
-    setBusy(false)
-    setPendingTurn(null)
-    setStatus(null)
-    sentenceSpeakerRef.current = null
-    resetTtsQueue()
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ""
-      audioRef.current = null
-    }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel()
-    }
+    setStopping(true)
   }
 
   async function startLoop() {
@@ -648,8 +641,8 @@ export function ScenarioPlay({
           </div>
           <div className="flex items-center gap-2">
             {running || busy ? (
-              <Button type="button" variant="outline" onClick={stop}>
-                Stop
+              <Button type="button" variant="outline" onClick={stop} disabled={stopping}>
+                {stopping ? "Stopping…" : "Stop"}
               </Button>
             ) : (
               <Button
