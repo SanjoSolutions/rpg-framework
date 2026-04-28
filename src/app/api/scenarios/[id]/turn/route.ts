@@ -26,6 +26,7 @@ import {
   requestConsent,
   requestMoveConsent,
   streamCharacterTurn,
+  stripLeadingSpeakerLabel,
   type ConsentRefusal,
   type POVKnowledge,
   type PreviousAttempt,
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             send("delta", { content: chunk })
           },
         })
-        const trimmed = buffered.trim()
+        const trimmed = stripLeadingSpeakerLabel(buffered).trim()
         if (trimmed.length > 0) {
           const message = appendMessage({
             scenarioId: scenario.id,

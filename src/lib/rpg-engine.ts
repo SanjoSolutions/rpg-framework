@@ -22,6 +22,10 @@ export interface SpeakerSelection {
   name: string
 }
 
+export function stripLeadingSpeakerLabel(text: string): string {
+  return text.replace(/^\s*\[[^\]\n]{1,60}\]\s*:\s*/, "")
+}
+
 function shiftMarkdownHeadings(text: string, minLevel: number): string {
   const headingRegex = /^(#{1,6})(?=\s)/gm
   let smallest = Number.POSITIVE_INFINITY
@@ -1025,7 +1029,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           ...oneActionRule,
           "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
           "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character — no acknowledgement, no meta reference to it.",
-          `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
+          `NEVER prefix your reply with a name or label ${labelExample}, and never with "[Director]:" or any other bracketed tag. Just write your reply directly.`,
           "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
       : []
