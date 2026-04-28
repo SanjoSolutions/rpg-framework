@@ -26,7 +26,7 @@ export default function CharactersPage() {
               >
                 <h2 className="font-semibold">{c.name}</h2>
                 {c.description && (
-                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{c.description}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{c.description}</p>
                 )}
               </Link>
             </li>

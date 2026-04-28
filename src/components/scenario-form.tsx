@@ -263,7 +263,7 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
                   <label htmlFor={`char-${c.id}`} className="flex-1 cursor-pointer min-w-0">
                     <div className="font-medium text-sm">{c.name}</div>
                     {c.description && (
-                      <div className="text-xs text-muted-foreground line-clamp-2">{c.description}</div>
+                      <div className="text-xs text-muted-foreground whitespace-pre-wrap">{c.description}</div>
                     )}
                   </label>
                   {selected && attachedLocations.length > 0 && (
