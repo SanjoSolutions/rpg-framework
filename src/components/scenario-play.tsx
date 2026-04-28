@@ -656,7 +656,7 @@ function LocationsBar({
       return lid === locationId
     })
   return (
-    <div className="border-b border-border px-6 py-2 flex flex-wrap gap-2 items-stretch">
+    <div className="border-b border-border px-6 py-2 flex flex-wrap gap-2 items-start">
       {locations.map((loc) => {
         const here = charactersAt(loc.id)
         const active = loc.id === activeLocationId
@@ -684,7 +684,7 @@ function LocationsBar({
             {here.length === 0 ? (
               <span className="text-muted-foreground italic">empty</span>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-0.5 max-h-32 overflow-y-auto pr-1">
                 {here.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-2">
                     <span className="truncate">{c.name}</span>
