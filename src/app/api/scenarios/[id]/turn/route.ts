@@ -34,6 +34,8 @@ import {
 } from "@/lib/rpg-engine"
 import { getScenario, setCharacterLocation, touchScenario } from "@/lib/scenarios"
 import { getSettings } from "@/lib/settings"
+import { getValidActivation } from "@/lib/activation"
+import { FREE_TURN_LIMIT, getFreeTurnsUsed, incrementFreeTurnsUsed } from "@/lib/turn-usage"
 import { type NextRequest } from "next/server"
 
 const logger = getLogger({ component: "turn" })
@@ -44,6 +46,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const { id } = await ctx.params
   const scenario = getScenario(id)
   if (!scenario) return new Response("Scenario not found", { status: 404 })
+
+  const activated = !!getValidActivation()
+  if (!activated && getFreeTurnsUsed() >= FREE_TURN_LIMIT) {
+    return new Response(
+      `Free trial used (${FREE_TURN_LIMIT} turns). Activate the app from the Activate page to keep playing.`,
+      { status: 402 },
+    )
+  }
 
   const allCharacters = scenario.characterIds
     .map((cid) => getCharacter(cid))
@@ -552,6 +562,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             )
           }
         }
+
+        if (!activated) incrementFreeTurnsUsed()
 
         // Emit done as soon as all user-visible work is finished so the
         // client can start the next turn while post-tasks (memory + name

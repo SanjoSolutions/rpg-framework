@@ -2,6 +2,7 @@ import { ITCHIO_CLIENT_ID, ITCHIO_GAME_ID, ITCHIO_REDIRECT_URI } from "./activat
 import { getDb } from "./db"
 import { getLogger } from "./logger"
 import { machineFingerprint } from "./machine-fingerprint"
+import { FREE_TURN_LIMIT, getFreeTurnsUsed } from "./turn-usage"
 
 const logger = getLogger({ module: "activation" })
 
@@ -27,6 +28,8 @@ export interface ActivationStatus {
   active: boolean
   lastVerifiedAt: number | null
   authorizeUrl: string
+  freeTurnsUsed: number
+  freeTurnLimit: number
 }
 
 interface ActivationRow {
@@ -180,5 +183,7 @@ export function getStatus(): ActivationStatus {
     active: !!activation,
     lastVerifiedAt: activation?.lastVerifiedAt ?? null,
     authorizeUrl: buildAuthorizeUrl(),
+    freeTurnsUsed: getFreeTurnsUsed(),
+    freeTurnLimit: FREE_TURN_LIMIT,
   }
 }
