@@ -1059,7 +1059,6 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const ruleLines =
     character != null
       ? [
-          `The user voices every other character${otherAliases.length > 0 ? ` (${othersList})` : ""} and the narrator. Their messages arrive prefixed with the speaker's name. Treat each speaker as their own autonomous character — own goals, own personality from the cast above — that the user happens to be playing; never collapse them into a single "user" voice or assume they speak for one another.`,
           "Director lines in the transcript are authoritative out-of-character direction from the user steering the scene — let them shape your turn, in character.",
           "Characters listed by name above are known to you. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (appearance, voice, origin). Stranger names emerge through interaction.",
         ].filter(Boolean)
