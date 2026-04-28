@@ -1,0 +1,83 @@
+import { getLogger } from "../logger"
+import { grokStrategy } from "./grok"
+import { nemomixStrategy } from "./nemomix"
+import {
+  MAX_HISTORY_MESSAGES,
+  type ChatMessage,
+  type GenerateOnceArgs,
+  type LLMBackend,
+  type LLMStrategy,
+  type StreamChatArgs,
+} from "./types"
+
+export { MAX_HISTORY_MESSAGES }
+export type { ChatMessage, LLMBackend, LLMStrategy }
+
+const logger = getLogger({ component: "llm" })
+
+const STRATEGIES: Record<LLMBackend, LLMStrategy> = {
+  grok: grokStrategy,
+  "nemomix-local": nemomixStrategy,
+}
+
+export function getLLMStrategy(backend: LLMBackend): LLMStrategy {
+  const strategy = STRATEGIES[backend]
+  if (!strategy) throw new Error(`Unknown LLM backend "${backend}"`)
+  return strategy
+}
+
+interface StreamOptions extends StreamChatArgs {
+  backend: LLMBackend
+}
+
+export async function streamChat(options: StreamOptions): Promise<void> {
+  const strategy = getLLMStrategy(options.backend)
+  const truncated = options.messages.slice(-MAX_HISTORY_MESSAGES)
+  logger.info(
+    { backend: options.backend, mode: "stream", system: options.system, messages: truncated },
+    "LLM request",
+  )
+  let response = ""
+  try {
+    await strategy.streamChat({
+      system: options.system,
+      messages: truncated,
+      signal: options.signal,
+      onText: (chunk) => {
+        response += chunk
+        options.onText(chunk)
+      },
+    })
+  } finally {
+    logger.info({ backend: options.backend, mode: "stream", response }, "LLM response")
+  }
+}
+
+interface GenerateOptions extends GenerateOnceArgs {
+  backend: LLMBackend
+}
+
+export async function generateOnce(options: GenerateOptions): Promise<string> {
+  const strategy = getLLMStrategy(options.backend)
+  const truncatedHistory = (options.history ?? [])
+    .filter((m) => m.role !== "system" && m.content.length > 0)
+    .slice(-MAX_HISTORY_MESSAGES)
+  logger.info(
+    {
+      backend: options.backend,
+      mode: "once",
+      system: options.system,
+      history: truncatedHistory,
+      prompt: options.prompt,
+    },
+    "LLM request",
+  )
+  const text = await strategy.generateOnce({
+    system: options.system,
+    history: truncatedHistory,
+    prompt: options.prompt,
+    signal: options.signal,
+  })
+  logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
+  return text
+}

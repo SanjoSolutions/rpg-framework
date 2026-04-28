@@ -38,11 +38,11 @@ Schema changes happen by editing the inline `applySchema` block in `src/lib/db.t
 - `grok` — xAI Grok via `@ai-sdk/xai`. Requires `XAI_API_KEY`.
 - `nemomix-local` — local OpenAI-compatible server (Ollama / llama.cpp) running NemoMix-Unleashed-12B. URL via `NEMOMIX_LOCAL_URL` (default `http://localhost:11434`).
 
-Backend selection is global and toggled in `/settings`. See `src/lib/llm.ts`.
+Backend selection is global and chosen in `/settings`. Strategies live under `src/lib/llm/` (one file per backend, registered in `src/lib/llm/index.ts`).
 
 ## Voice
 
-xAI HTTP TTS API. Per-character `voice` field is an xAI voice id (e.g. `Eve`, `Rex`). Audio is cached on disk under `public/audio/{voice}/{hash}.mp3`. See `src/lib/tts.ts` and `/api/tts`.
+TTS strategies live under `src/lib/tts/` and follow the same pattern as LLM. Default strategy is `xai` — xAI HTTP TTS API. Per-character `voice` field is a voice id (e.g. `Eve`, `Rex`). Audio is cached on disk under `public/audio/{voice}/{hash}.mp3`. See `src/lib/tts/index.ts` and `/api/tts`.
 
 ## RPG turn flow
 
@@ -60,4 +60,8 @@ Dev-only (NODE_ENV=development). Single toggle: **Raw messages** — show LLM ou
 
 ## Settings
 
-Single user-facing toggle: **Use NemoMix-Unleashed-12B locally**. Persisted to SQLite.
+User-facing settings (persisted to SQLite):
+
+- **LLM backend** — selects an `LLMBackend` strategy.
+- **TTS backend** — selects a `TtsBackend` strategy.
+- **Require consent**, **Character memories**, **Characters need to learn names** — gameplay toggles.

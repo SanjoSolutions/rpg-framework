@@ -80,7 +80,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const context: SceneContext = { scenario, location, characters }
   const settings = getSettings()
-  const backend: LLMBackend = settings.useLocalLlm ? "nemomix-local" : "grok"
+  const backend: LLMBackend = settings.llmBackend
   const requireConsent = settings.requireConsent
   const memoriesEnabled = settings.memoriesEnabled
   const learnNames = settings.learnNames

@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const backend: LLMBackend = getSettings().useLocalLlm ? "nemomix-local" : "grok"
+  const backend: LLMBackend = getSettings().llmBackend
   try {
     const proposal = await generateFieldProposal({
       backend,

@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
+import { LLM_BACKENDS } from "@/lib/llm/types"
 import { getSettings, updateSettings } from "@/lib/settings"
+import { TTS_BACKENDS } from "@/lib/tts/types"
 
 export const runtime = "nodejs"
 
 const settingsSchema = z.object({
-  useLocalLlm: z.boolean().optional(),
+  llmBackend: z.enum(LLM_BACKENDS).optional(),
+  ttsBackend: z.enum(TTS_BACKENDS).optional(),
+  xaiApiKey: z.string().max(500).optional(),
   requireConsent: z.boolean().optional(),
   memoriesEnabled: z.boolean().optional(),
   learnNames: z.boolean().optional(),

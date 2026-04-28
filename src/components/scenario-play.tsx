@@ -11,6 +11,7 @@ import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
+import { isBrowserTtsBackend } from "@/lib/tts/types"
 
 interface SpeakerInfo {
   kind: "character" | "narrator"
@@ -76,7 +77,8 @@ export function ScenarioPlay({
   initialActiveLocationId,
   initialCharacterLocations,
 }: Props) {
-  const { voiceEnabled, setVoiceEnabled } = useSettings()
+  const { voiceEnabled, setVoiceEnabled, ttsBackend } = useSettings()
+  const useBrowserTts = isBrowserTtsBackend(ttsBackend)
   const { showRawMessages, showMemories, showRequestInternals } = useDevSidebar()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
@@ -211,6 +213,12 @@ export function ScenarioPlay({
     const myToken = ttsTokenRef.current
     ttsChainRef.current = ttsChainRef.current.catch(() => {}).then(() => {
       if (ttsTokenRef.current !== myToken) return
+      if (useBrowserTts) {
+        const speaker = new SentenceSpeaker(prefix, voice)
+        speaker.push(trimmed)
+        speaker.flush()
+        return
+      }
       return playVoice({
         voice,
         text: trimmed,
@@ -319,7 +327,7 @@ export function ScenarioPlay({
             sentenceSpeakerRef.current = null
             if (
               voiceEnabled &&
-              serverTtsAvailable === false &&
+              (useBrowserTts || serverTtsAvailable === false) &&
               p.kind === "character" &&
               p.characterId
             ) {

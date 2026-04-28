@@ -9,6 +9,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react"
+import { LLM_BACKENDS, type LLMBackend } from "@/lib/llm/types"
+import { TTS_BACKENDS, type TtsBackend } from "@/lib/tts/types"
 
 const VOICE_KEY = "rpg-voice-enabled"
 
@@ -37,8 +39,12 @@ function readVoiceServer(): boolean {
 
 interface SettingsState {
   loaded: boolean
-  useLocalLlm: boolean
-  setUseLocalLlm: (value: boolean) => void
+  llmBackend: LLMBackend
+  setLlmBackend: (value: LLMBackend) => void
+  ttsBackend: TtsBackend
+  setTtsBackend: (value: TtsBackend) => void
+  xaiApiKey: string
+  setXaiApiKey: (value: string) => void
   requireConsent: boolean
   setRequireConsent: (value: boolean) => void
   memoriesEnabled: boolean
@@ -53,7 +59,9 @@ const SettingsContext = createContext<SettingsState | null>(null)
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
-  const [useLocalLlm, setUseLocalLlmState] = useState(false)
+  const [llmBackend, setLlmBackendState] = useState<LLMBackend>("grok")
+  const [ttsBackend, setTtsBackendState] = useState<TtsBackend>("xai")
+  const [xaiApiKey, setXaiApiKeyState] = useState("")
   const [requireConsent, setRequireConsentState] = useState(false)
   const [memoriesEnabled, setMemoriesEnabledState] = useState(false)
   const [learnNames, setLearnNamesState] = useState(false)
@@ -65,7 +73,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (cancelled) return
-        if (data && typeof data.useLocalLlm === "boolean") setUseLocalLlmState(data.useLocalLlm)
+        if (data && LLM_BACKENDS.includes(data.llmBackend)) setLlmBackendState(data.llmBackend)
+        if (data && TTS_BACKENDS.includes(data.ttsBackend)) setTtsBackendState(data.ttsBackend)
+        if (data && typeof data.xaiApiKey === "string") setXaiApiKeyState(data.xaiApiKey)
         if (data && typeof data.requireConsent === "boolean") setRequireConsentState(data.requireConsent)
         if (data && typeof data.memoriesEnabled === "boolean") setMemoriesEnabledState(data.memoriesEnabled)
         if (data && typeof data.learnNames === "boolean") setLearnNamesState(data.learnNames)
@@ -79,12 +89,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setUseLocalLlm = useCallback((value: boolean) => {
-    setUseLocalLlmState(value)
+  const setLlmBackend = useCallback((value: LLMBackend) => {
+    setLlmBackendState(value)
     fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ useLocalLlm: value }),
+      body: JSON.stringify({ llmBackend: value }),
+    }).catch(() => {})
+  }, [])
+
+  const setTtsBackend = useCallback((value: TtsBackend) => {
+    setTtsBackendState(value)
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ttsBackend: value }),
+    }).catch(() => {})
+  }, [])
+
+  const setXaiApiKey = useCallback((value: string) => {
+    setXaiApiKeyState(value)
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xaiApiKey: value }),
     }).catch(() => {})
   }, [])
 
@@ -128,8 +156,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     <SettingsContext.Provider
       value={{
         loaded,
-        useLocalLlm,
-        setUseLocalLlm,
+        llmBackend,
+        setLlmBackend,
+        ttsBackend,
+        setTtsBackend,
+        xaiApiKey,
+        setXaiApiKey,
         requireConsent,
         setRequireConsent,
         memoriesEnabled,
