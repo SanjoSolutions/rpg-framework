@@ -432,6 +432,10 @@ export function ScenarioPlay({
     while (runningRef.current && hasCharacters) {
       await generateTurn()
       if (!runningRef.current) break
+      // Wait for queued TTS to finish so the next turn doesn't preempt the
+      // tail of the previous turn's audio (e.g., a fulfillment line).
+      await ttsChainRef.current.catch(() => {})
+      if (!runningRef.current) break
     }
     runningRef.current = false
     setRunning(false)
@@ -792,12 +796,16 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
     release()
     resolveEnded()
   }
+  // Resolve on "pause" too so stop()/cleanup interruptions (which pause but
+  // don't trigger "ended") don't leave the chain promise hanging.
   audio.addEventListener("ended", handleEnded, { once: true })
+  audio.addEventListener("pause", handleEnded, { once: true })
   let fellBack = false
   const fallback = () => {
     if (fellBack) return
     fellBack = true
     audio.removeEventListener("ended", handleEnded)
+    audio.removeEventListener("pause", handleEnded)
     release()
     onServerFailure()
     const speaker = new SentenceSpeaker(prefix, voice)
