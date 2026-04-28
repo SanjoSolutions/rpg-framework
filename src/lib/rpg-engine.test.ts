@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   buildAliasMap,
+  mentionsOwnName,
   parseConsentResponse,
   parseExtractedMemories,
   parseIntentProposal,
@@ -326,3 +327,21 @@ describe("parseExtractedMemories", () => {
   })
 })
 
+
+describe("mentionsOwnName", () => {
+  it("matches a standalone name", () => {
+    expect(mentionsOwnName("I grab Sweety's hair", "Sweety")).toBe(true)
+  })
+  it("is case-insensitive", () => {
+    expect(mentionsOwnName("i pin sweety against the wall", "Sweety")).toBe(true)
+  })
+  it("ignores partial matches", () => {
+    expect(mentionsOwnName("I sweeten the deal", "Sweet")).toBe(false)
+  })
+  it("returns false when the name is absent", () => {
+    expect(mentionsOwnName("I reach for her hand", "Sweety")).toBe(false)
+  })
+  it("returns false for an empty name", () => {
+    expect(mentionsOwnName("anything", "")).toBe(false)
+  })
+})

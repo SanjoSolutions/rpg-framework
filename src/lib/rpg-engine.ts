@@ -272,6 +272,18 @@ export async function pickNextSpeaker(args: {
   return { kind: "character", characterId: chosen.id, name: chosen.name }
 }
 
+/**
+ * True iff `text` mentions `name` as a standalone word. Used to detect when
+ * the LLM has slipped into a wrong-POV — e.g. proposing "I grab Sweety's
+ * hair" while it is supposed to BE Sweety. Such turns must be discarded.
+ */
+export function mentionsOwnName(text: string, name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed) return false
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return new RegExp(`(^|[^A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`, "i").test(text)
+}
+
 export function selectRandom<T>(items: readonly T[], rng: () => number = Math.random): T {
   if (items.length === 0) throw new Error("selectRandom: items must not be empty")
   const index = Math.floor(rng() * items.length) % items.length
@@ -432,7 +444,7 @@ export async function proposeIntent(args: {
 
   const system = [
     `You are ${speaker.name}, planning your next turn in a roleplay scene.`,
-    `Use "my"/"me"/"myself" for yourself; never write your own name ("${speaker.name}"). Only other characters get named.`,
+    `"I"/"me"/"my"/"myself" must refer to you, ${speaker.name}. Never write your own name ("${speaker.name}") in INTENT — that would mean talking about yourself in the third person, which signals you've confused yourself with another character. The roster below lists OTHER characters; "${speaker.name}" is NOT in it.`,
     "The action is yours alone — don't describe what anyone else does.",
     "Pick exactly one of four turn TYPES:",
     "  • REQUEST_CONSENT — your own body makes direct physical contact with another character's body. Write INTENT as \"I <verb> ...\". List affected characters in INVOLVES.",
@@ -488,7 +500,11 @@ export async function proposeIntent(args: {
     .join("\n\n")
 
   const raw = await generateOnce({ backend, system, history, prompt, signal: args.signal })
-  return parseIntentProposal(raw, others, aliases, destinations)
+  const parsed = parseIntentProposal(raw, others, aliases, destinations)
+  if (mentionsOwnName(parsed.intent, speaker.name)) {
+    return { type: "ACT", intent: "", targetIds: [], destinationLocationId: null }
+  }
+  return parsed
 }
 
 export interface ConsentDecision {
@@ -926,7 +942,7 @@ export async function generateFulfillmentMessage(args: {
   const system = [
     `You are ${fulfiller.name}.`,
     `${speakerLabel} requested: "${intent}". The request has been consented to by everyone involved.`,
-    `Write ONE short first-person sentence describing what you (${fulfiller.name}) do to carry out your part. Use "I"/"my"; never write your own name.`,
+    `Write ONE short first-person sentence describing what you (${fulfiller.name}) do to carry out your part. "I"/"my" must refer to you, ${fulfiller.name}. Never write your own name ("${fulfiller.name}") — if the request describes an action being done TO you, write what YOU do (e.g. submit, brace, comply), not what is done to you.`,
     "Just the sentence. No preamble, no quotes, no label.",
   ].join("\n")
 
@@ -940,7 +956,9 @@ export async function generateFulfillmentMessage(args: {
   ].join("\n\n")
 
   const raw = await generateOnce({ backend, system, prompt, signal: args.signal })
-  return raw.trim().replace(/^["'`\s]+|["'`\s]+$/g, "")
+  const text = raw.trim().replace(/^["'`\s]+|["'`\s]+$/g, "")
+  if (mentionsOwnName(text, fulfiller.name)) return ""
+  return text
 }
 
 export interface StreamCharacterTurnArgs {
