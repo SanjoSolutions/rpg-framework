@@ -159,6 +159,7 @@ export function ScenarioPlay({
   useEffect(() => {
     const aborts = abortsRef.current
     return () => {
+      runningRef.current = false
       for (const c of aborts) c.abort()
       aborts.clear()
       sentenceSpeakerRef.current = null
