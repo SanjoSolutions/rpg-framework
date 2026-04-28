@@ -1070,14 +1070,15 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const otherCharactersRules =
     otherAliases.length > 0
       ? [
-          `STRICT — write ONLY your own dialogue, actions, thoughts, and feelings. Your turn ends the instant your own action ends.`,
+          `STRICT — write ONLY your own dialogue and actions. Your turn ends the instant your own action ends.`,
           `${othersList} are NOT yours to write. Not a word of their speech, not a sound, not a thought, not a feeling, not a gesture (no nods, smiles, blushes, gasps, sighs, glances), not a reaction — not even a reaction to what you just did. Their responses belong to THEIR next turn.`,
           `Concrete contrast — if your action is reaching for her hand:\n  WRONG: "I reach for her hand. She lets me take it, her fingers warm against mine."\n  WRONG: "I reach for her hand and she pulls away with a frown."\n  RIGHT: "I reach for her hand."\nStop where the RIGHT example stops. Every time.`,
         ]
       : []
 
   const oneActionRule = [
-    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue or a thought if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
+    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want, but do not chain actions. Crossing the room, then pouring a drink, then sitting down is three turns, not one. Stop after the first action.",
+    "No internal monologue. Skip thoughts, feelings, motivations, and reflection — write only what you say and do, what others in the scene can see and hear.",
   ]
 
   const refusalLines = (refusals ?? [])
@@ -1109,7 +1110,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       ? [
           ...otherCharactersRules,
           ...oneActionRule,
-          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action or observation as appropriate, but only your own.",
+          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action as appropriate, but only your own.",
           `NEVER prefix your reply with a name or label ${labelExample}. Just write your reply directly.`,
           "You only know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown only as a 'Stranger' label is unknown to you; refer to them by what you can observe (their appearance, their voice, where they came from). Do NOT invent names for strangers.",
         ].filter(Boolean)
