@@ -29,14 +29,15 @@ export async function ensureTranscriptSummary(args: {
   scenario: Scenario
   messages: Message[]
   signal?: AbortSignal
+  onStart?: () => void
 }): Promise<string> {
-  const { backend, scenario, messages, signal } = args
+  const { backend, scenario, messages, signal, onStart } = args
   if (messages.length < TRANSCRIPT_SUMMARY_TRIGGER) return scenario.transcriptSummary
   const olderCount = messages.length - RECENT_TRANSCRIPT_LIMIT
 
   const cachedSummary = scenario.transcriptSummary
   const cachedCount = scenario.transcriptSummaryCount
-  if (cachedCount >= olderCount) {
+  if (olderCount - cachedCount < RECENT_TRANSCRIPT_LIMIT) {
     logger.info(
       {
         scenarioId: scenario.id,
@@ -69,6 +70,7 @@ export async function ensureTranscriptSummary(args: {
     "Write the updated running summary now.",
   ].join("\n\n")
 
+  onStart?.()
   const text = await generateOnce({ backend, system, prompt, signal })
   const summary = text.trim()
   setScenarioTranscriptSummary(scenario.id, summary, olderCount)
