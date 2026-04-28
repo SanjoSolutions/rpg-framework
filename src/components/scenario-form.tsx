@@ -175,11 +175,11 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="summary">Summary</Label>
+          <Label htmlFor="summary">Description</Label>
           <AssistButton
             entityType="scenario"
             field="summary"
-            fieldLabel="Summary"
+            fieldLabel="Description"
             getEntity={getEntity}
             targetRef={summaryRef}
           />
@@ -262,8 +262,8 @@ export function ScenarioForm({ mode, scenario, allCharacters, allLocations }: Pr
                   />
                   <label htmlFor={`char-${c.id}`} className="flex-1 cursor-pointer min-w-0">
                     <div className="font-medium text-sm">{c.name}</div>
-                    {c.appearance && (
-                      <div className="text-xs text-muted-foreground line-clamp-1">{c.appearance}</div>
+                    {c.description && (
+                      <div className="text-xs text-muted-foreground line-clamp-2">{c.description}</div>
                     )}
                   </label>
                   {selected && attachedLocations.length > 0 && (

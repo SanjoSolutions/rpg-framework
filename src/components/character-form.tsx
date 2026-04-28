@@ -4,32 +4,47 @@ import { AssistButton } from "@/components/assist-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useSettings } from "@/hooks/use-settings"
 import type { Character } from "@/lib/characters"
+import { XAI_VOICES } from "@/lib/tts/xai/voices"
 import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 interface Props {
   mode: "create" | "edit"
   character?: Character
 }
 
+const NO_VOICE = "__none__"
+
 export function CharacterForm({ mode, character }: Props) {
   const router = useRouter()
+  const { ttsBackend } = useSettings()
   const [name, setName] = useState(character?.name ?? "")
   const [appearance, setAppearance] = useState(character?.appearance ?? "")
   const [description, setDescription] = useState(character?.description ?? "")
   const [voice, setVoice] = useState(character?.voice ?? "")
-  const [strangerName, setStrangerName] = useState(character?.strangerName ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const browserVoices = useBrowserVoices(ttsBackend === "chrome")
 
   const nameRef = useRef<HTMLInputElement>(null)
   const appearanceRef = useRef<HTMLTextAreaElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
-  const voiceRef = useRef<HTMLInputElement>(null)
 
   const getEntity = () => ({ name, appearance, description, voice })
+
+  const voiceOptions: string[] =
+    ttsBackend === "chrome" ? browserVoices : [...XAI_VOICES]
+  const voiceSelectValue = voice && voiceOptions.includes(voice) ? voice : NO_VOICE
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -41,7 +56,6 @@ export function CharacterForm({ mode, character }: Props) {
         appearance,
         description,
         voice: voice.trim() || null,
-        strangerName: strangerName.trim() || null,
       })
       const url = mode === "create" ? "/api/characters" : `/api/characters/${character!.id}`
       const method = mode === "create" ? "POST" : "PUT"
@@ -140,39 +154,27 @@ export function CharacterForm({ mode, character }: Props) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="strangerName">Stranger name</Label>
-        <Input
-          id="strangerName"
-          value={strangerName}
-          onChange={(e) => setStrangerName(e.target.value)}
-          placeholder={mode === "create" ? "Auto-generated (e.g. Stranger 7)" : ""}
-          maxLength={120}
-        />
+        <Label htmlFor="voice">TTS voice (optional)</Label>
+        <Select
+          value={voiceSelectValue}
+          onValueChange={(value) => setVoice(value === NO_VOICE ? "" : value)}
+        >
+          <SelectTrigger id="voice" className="w-full">
+            <SelectValue placeholder="Default voice" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_VOICE}>Default voice</SelectItem>
+            {voiceOptions.map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">
-          How others refer to this character before learning their name. Globally unique;
-          stays the same across all scenes.
-        </p>
-      </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="voice">TTS voice (optional)</Label>
-          <AssistButton
-            entityType="character"
-            field="voice"
-            fieldLabel="TTS voice"
-            getEntity={getEntity}
-            targetRef={voiceRef}
-          />
-        </div>
-        <Input
-          id="voice"
-          ref={voiceRef}
-          value={voice}
-          onChange={(e) => setVoice(e.target.value)}
-          placeholder="e.g. Eve, Rex"
-        />
-        <p className="text-xs text-muted-foreground">
-          xAI voice id used when reading this character&apos;s lines aloud.
+          {ttsBackend === "chrome"
+            ? "Voice from your browser's SpeechSynthesis available in this device."
+            : "xAI voice id used when reading this character's lines aloud."}
         </p>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -190,4 +192,23 @@ export function CharacterForm({ mode, character }: Props) {
       </div>
     </form>
   )
+}
+
+function useBrowserVoices(enabled: boolean): string[] {
+  const [voices, setVoices] = useState<string[]>([])
+  useEffect(() => {
+    if (!enabled) return
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return
+    const synth = window.speechSynthesis
+    const refresh = () => {
+      const all = synth.getVoices()
+      const english = all.filter((v) => v.lang.toLowerCase().startsWith("en"))
+      const pool = english.length > 0 ? english : all
+      setVoices(pool.map((v) => v.name))
+    }
+    refresh()
+    synth.addEventListener("voiceschanged", refresh)
+    return () => synth.removeEventListener("voiceschanged", refresh)
+  }, [enabled])
+  return voices
 }

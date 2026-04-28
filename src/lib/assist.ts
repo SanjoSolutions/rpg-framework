@@ -46,7 +46,7 @@ const FIELDS: Record<AssistEntityType, Record<string, FieldDescriptor>> = {
       guidance: "A short evocative title for the scenario (1–6 words). Output the title.",
     },
     summary: {
-      label: "Summary",
+      label: "Description",
       guidance:
         "The setup of the scene — what is happening, the situation the player is dropped into, what the scene wants to explore. One short paragraph.",
     },
