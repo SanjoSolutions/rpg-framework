@@ -1,9 +1,7 @@
 # TODO
 
-* Character -> TTS voice should be a select with all available voices (depending on what TTS backend is configured)
-* Character -> Stranger name: Remove this field from form
-* Scenario -> Summary should be renamed "Description"
-* Scenario form: Character subtext should be their description not appearance (the same way as it is on the characters page)
+* Remove legal pages
+* Bug: Memories are shown on http://localhost:3000/scenarios/123d4d70-fd37-42b9-acbe-8231ca4bd3c8 even though the memories feature is disabled.
 
 * Setup flow
 
