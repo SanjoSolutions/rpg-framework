@@ -895,6 +895,10 @@ class SentenceSpeaker {
     let match: RegExpExecArray | null
     while ((match = matcher.exec(this.buffer)) !== null) {
       const end = match.index + match[0].length
+      // Need to peek the next char to decide; wait for more streamed text.
+      if (end >= this.buffer.length) break
+      // Lowercase next char → dialogue tag like `"...!" says X` — keep going.
+      if (/[a-z]/.test(this.buffer[end])) continue
       const sentence = this.buffer.slice(cursor, end).trim()
       if (sentence) this.emit(sentence)
       cursor = end
