@@ -18,16 +18,10 @@ export default function ActivatePage() {
         </p>
       </header>
 
-      <div className="rounded-xl border border-border p-6 space-y-4">
-        <p className="text-sm">
-          You will be redirected to itch.io to authorize this app. After approval, itch.io
-          sends you back here and the app verifies your purchase.
-        </p>
-        <div className="flex justify-center">
-          <Button asChild>
-            <Link href={buildAuthorizeUrl()}>Sign in with itch.io</Link>
-          </Button>
-        </div>
+      <div className="flex justify-center">
+        <Button asChild>
+          <Link href={buildAuthorizeUrl()}>Activate with itch.io account</Link>
+        </Button>
       </div>
     </div>
   )
