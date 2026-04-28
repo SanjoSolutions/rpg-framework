@@ -252,6 +252,30 @@ export function ScenarioPlay({
     ttsChainRef.current = Promise.resolve()
   }
 
+  async function waitForTtsIdle() {
+    if (!voiceEnabled) return
+    // Drain any queued server-TTS plays first. New enqueues during the await
+    // re-chain off the latest promise, so re-read the ref until it settles.
+    while (true) {
+      const snapshot = ttsChainRef.current
+      try {
+        await snapshot
+      } catch {
+        // ignore
+      }
+      if (!runningRef.current) return
+      if (ttsChainRef.current === snapshot) break
+    }
+    // Drain browser speechSynthesis (used by SentenceSpeaker for sentence-
+    // level browser TTS, which bypasses ttsChainRef).
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const synth = window.speechSynthesis
+      while (runningRef.current && (synth.speaking || synth.pending)) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+  }
+
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages, pendingTurn])
@@ -476,12 +500,13 @@ export function ScenarioPlay({
     while (runningRef.current && hasCharacters) {
       // Resume the loop as soon as the previous turn's user-visible
       // messages have landed. The previous SSE stream keeps running for
-      // post-task events (memory + name extraction); meanwhile the next
-      // turn's pickNextSpeaker / proposeIntent / consent calls happen in
-      // parallel with TTS playback of the previous message.
+      // post-task events (memory + name extraction).
       await new Promise<void>((resolve) => {
         void generateTurn({ onVisibleDone: resolve })
       })
+      if (!runningRef.current) break
+      // Hold the next turn until the current message has finished speaking.
+      await waitForTtsIdle()
       if (!runningRef.current) break
     }
     runningRef.current = false
