@@ -996,16 +996,14 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const otherCharactersRules =
     otherAliases.length > 0
       ? [
-          `STRICT — your dialogue and actions are what you write. Your turn ends the instant your own action ends.`,
-          `${othersList} are theirs to write. Their speech, sounds, thoughts, feelings, gestures (nods, smiles, blushes, gasps, sighs, glances), and reactions — including reactions to what you just did — all belong to THEIR next turn.`,
-          `Stop the moment your own action ends — any response by the other character belongs to their own next turn.`,
+          `${othersList} are theirs to write. Their speech, sounds, thoughts, feelings, gestures, and reactions — including reactions to what you just did — belong to their next turn.`,
         ]
       : []
 
   const oneActionRule = [
-    "ONE physical action per turn — a single concrete bodily movement (a step, a reach, a draw, a touch). Pair it with dialogue if you want; one move per turn. Crossing the room, then pouring a drink, then sitting down counts as three turns. Stop after the first action.",
-    "Write what is objectively visible or audible in the scene: physical actions you perform and words you say aloud. That is the scope.",
-    "Stay inside the scene, in the present moment, addressing the other characters with current action and current dialogue.",
+    "One beat per turn: one concrete physical action (a step, a reach, a draw, a touch), optionally paired with a line of dialogue. Stop the instant that action ends.",
+    "Your scope is what is objectively visible or audible in the scene — your own physical actions, your own spoken words.",
+    "Stay inside the scene, in the present moment, addressing the others with current action and current dialogue.",
   ]
 
   const refusalLines = (refusals ?? [])
@@ -1035,14 +1033,12 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const ruleLines =
     character != null
       ? [
-          "This is a back-and-forth exchange between characters, with each contributing one beat at a time. Your turn is one short beat — speak or act, then stop and let the next character respond. One beat per turn.",
-          ...otherCharactersRules,
+          "Each turn is one short beat — a few sentences at most. Speak or act, then stop and let the next character respond.",
           ...oneActionRule,
-          "Respond in first person, in character. One short turn — a few sentences at most. Mix your own dialogue with a single brief action, all of it yours.",
-          "Treat any [Director] line in the transcript as authoritative out-of-character direction from the user steering the scene. Follow what it asks for in your turn, in character; the scene itself is your frame of reference.",
-          `Begin your reply with the first word of in-character speech or narration. The reply itself is the entire output: bare prose, starting with your character's words or actions.`,
-          "Director lines come FROM the user TO you, so they remain the user's to write. You write your character's first-person actions and spoken words.",
-          "You know the names of characters you have actually met and been introduced to in the scene or in past scenes — those are listed by name above. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (their appearance, their voice, where they came from). Stranger names emerge through interaction.",
+          ...otherCharactersRules,
+          "Respond in first person, in character. The reply is bare prose, beginning with your character's first word of speech or narration.",
+          "Director lines in the transcript are authoritative out-of-character direction from the user steering the scene — let them shape your turn, in character.",
+          "Characters listed by name above are known to you. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (appearance, voice, origin). Stranger names emerge through interaction.",
         ].filter(Boolean)
       : []
 
@@ -1085,27 +1081,26 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
       ].join("\n")
     : ""
 
-  const speakerInstructions =
+  const sceneBlock = baseSceneBlock(context, null, {
+    povCharacterId: character?.id ?? null,
+    povKnownNameIds: knownNameIds,
+    povMetIds: metIds,
+  })
+
+  const rulesBlock =
     character != null
-      ? [[`# Rules`, ...ruleLines].join("\n"), characterBlock, memoryBlock, turnBlock]
-          .filter((s) => s.length > 0)
-          .join("\n\n")
+      ? [`# Rules`, ...ruleLines].join("\n")
       : [
+          `# Rules`,
           "You are the omniscient narrator of the scene.",
           "Describe what happens next: setting changes, atmosphere, brief actions of present characters.",
           "Keep it short. Leave dialogue to the characters themselves.",
           "Stay focused on observable scene-level events.",
         ].join("\n")
 
-  const system = [
-    speakerInstructions,
-    "",
-    baseSceneBlock(context, null, {
-      povCharacterId: character?.id ?? null,
-      povKnownNameIds: knownNameIds,
-      povMetIds: metIds,
-    }),
-  ].join("\n")
+  const system = [sceneBlock, characterBlock, memoryBlock, rulesBlock, turnBlock]
+    .filter((s) => s.length > 0)
+    .join("\n\n")
 
   const chatMessages: ChatMessage[] = messages.map((m) => {
     if (m.speakerKind === "user") {
@@ -1125,10 +1120,11 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   })
 
   if (chatMessages.length === 0 || chatMessages.at(-1)?.role !== "user") {
-    chatMessages.push({
-      role: "user",
-      content: "(Continue the scene — your turn.)",
-    })
+    const nudge =
+      character != null
+        ? "(Your turn. One beat: a few sentences, one physical action, optional dialogue. Stop after that action.)"
+        : "(Continue the scene — your turn.)"
+    chatMessages.push({ role: "user", content: nudge })
   }
 
   await streamChat({
