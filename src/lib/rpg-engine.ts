@@ -79,9 +79,6 @@ function describeCharacterAcquaintance(character: Character): string {
       ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 4)}`
       : "Appearance: (a plain figure to your eye)",
   )
-  parts.push(
-    "(You know them by name from before. Their inner self is still their own — you observe what they say and do.)",
-  )
   return parts.join("\n")
 }
 
@@ -1026,7 +1023,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
   const characterBlock =
     character != null
       ? [
-          `# Your character`,
+          `# You`,
           `You are ${character.name}.`,
           character.appearance.trim()
             ? `Appearance: ${shiftMarkdownHeadings(character.appearance, 2)}`
