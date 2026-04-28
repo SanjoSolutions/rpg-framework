@@ -1009,29 +1009,6 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     character != null
       ? buildAliasMap(context.characters, character.id, knownNameIds)
       : null
-  const otherAliases =
-    character != null
-      ? context.characters
-          .filter((c) => c.id !== character.id)
-          .map((c) => labelFor(c.id, c.name, aliases!))
-      : []
-  const othersList = otherAliases.join(", ")
-  const otherCharactersDirective =
-    otherAliases.length > 0
-      ? [
-          `Write only your own body and your own voice. Each of ${othersList} writes their own — their speech, sounds, thoughts, feelings, gestures, and reactions all belong to their own turn.`,
-          `End your turn the moment your own action and your own dialogue end. The next prose beat is theirs.`,
-        ]
-      : [
-          "Write only your own body and your own voice.",
-        ]
-
-  const oneActionDirective = [
-    "One beat per turn: one concrete physical action you yourself perform (a step, a reach, a draw, a touch), optionally paired with a line of your own dialogue. Stop the instant that action ends.",
-    "Your scope is what your own body does and what your own mouth says — your own physical actions, your own spoken words.",
-    "Stay inside the scene, in the present moment, addressing the others with your current action and your current dialogue.",
-  ]
-
   const refusalLines = (refusals ?? [])
     .map((r) => {
       const alias = aliases ? labelFor(r.characterId, r.characterName, aliases) : r.characterName
@@ -1154,7 +1131,13 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     return { role: "user", content: `${label}: ${m.content}` }
   })
 
-  chatMessages.push({ role: "user", content: "(" + primer + ")" })
+  chatMessages.push({
+    role: "user",
+    content:
+      character != null
+        ? "(Your turn. One paragraph: an action and optionally a line of dialogue.)"
+        : "(Continue the scene — your turn.)",
+  })
 
   await streamChat({
     backend: args.backend,
