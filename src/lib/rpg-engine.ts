@@ -35,9 +35,11 @@ export interface SpeakerSelection {
 }
 
 export function stripLeadingSpeakerLabel(text: string): string {
-  return text
+  const stripped = text
     .replace(/^\s*\[[^\]\n]{1,60}\]\s*:\s*/, "")
     .replace(/^\s*[A-Z][\w .'-]{0,40}:\s+/, "")
+  const followUp = stripped.search(/\n\s*\n\s*(?:\[[^\]\n]{1,60}\]|[A-Z][\w .'-]{0,40})\s*:\s/)
+  return followUp >= 0 ? stripped.slice(0, followUp) : stripped
 }
 
 function shiftMarkdownHeadings(text: string, minLevel: number): string {
@@ -1014,7 +1016,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           .map((c) => labelFor(c.id, c.name, aliases!))
       : []
   const othersList = otherAliases.join(", ")
-  const otherCharactersRules =
+  const otherCharactersDirective =
     otherAliases.length > 0
       ? [
           `Write only your own body and your own voice. Each of ${othersList} writes their own — their speech, sounds, thoughts, feelings, gestures, and reactions all belong to their own turn.`,
@@ -1024,7 +1026,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           "Write only your own body and your own voice.",
         ]
 
-  const oneActionRule = [
+  const oneActionDirective = [
     "One beat per turn: one concrete physical action you yourself perform (a step, a reach, a draw, a touch), optionally paired with a line of your own dialogue. Stop the instant that action ends.",
     "Your scope is what your own body does and what your own mouth says — your own physical actions, your own spoken words.",
     "Stay inside the scene, in the present moment, addressing the others with your current action and your current dialogue.",
@@ -1058,10 +1060,6 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     character != null
       ? [
           `The user voices every other character${otherAliases.length > 0 ? ` (${othersList})` : ""} and the narrator. Their messages arrive prefixed with the speaker's name. Treat each speaker as their own autonomous character — own goals, own personality from the cast above — that the user happens to be playing; never collapse them into a single "user" voice or assume they speak for one another.`,
-          "Each turn is one short beat — a few sentences at most. Speak or act, then stop and let the next character respond.",
-          ...otherCharactersRules,
-          ...oneActionRule,
-          "Respond in first person, in character. The reply is bare prose, beginning with your character's first word of speech or narration.",
           "Director lines in the transcript are authoritative out-of-character direction from the user steering the scene — let them shape your turn, in character.",
           "Characters listed by name above are known to you. Anyone shown as a 'Stranger' label remains a mystery; refer to them by what you can observe (appearance, voice, origin). Stranger names emerge through interaction.",
         ].filter(Boolean)
@@ -1125,7 +1123,14 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           "Stay focused on observable scene-level events.",
         ].join("\n")
 
-  const system = [sceneBlock, characterBlock, memoryBlock, rulesBlock, turnBlock]
+  const system = [
+    "You are a character in a role play game.",
+    sceneBlock,
+    characterBlock,
+    memoryBlock,
+    rulesBlock,
+    turnBlock,
+  ]
     .filter((s) => s.length > 0)
     .join("\n\n")
 
@@ -1146,12 +1151,23 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     return { role: "user", content: `${label}: ${m.content}` }
   })
 
-  if (chatMessages.length === 0 || chatMessages.at(-1)?.role !== "user") {
-    const nudge =
-      character != null
-        ? "(Your turn. One beat: a few sentences, one physical action, optional dialogue. Stop after that action.)"
-        : "(Continue the scene — your turn.)"
-    chatMessages.push({ role: "user", content: nudge })
+  if (character != null) {
+    const lastOwnReply = [...messages]
+      .reverse()
+      .find((m) => m.speakerKind === "character" && m.speakerId === character.id)
+    const ranLong = lastOwnReply ? /\n\s*\n/.test(lastOwnReply.content.trim()) : false
+    const directives = [
+      "Your turn. Reply in first person as your character — bare prose, beginning with your first word of speech or narration.",
+      "The transcript labels your turn for you; your reply opens with that first word of speech or action itself.",
+      "Stop the moment another character would take their own beat — their dialogue, their actions, their reactions all belong to their own turn.",
+      "Each turn is one short beat — a few sentences, a single paragraph at most. Speak or act, then stop and let the next character respond.",
+      ...otherCharactersDirective,
+      ...oneActionDirective,
+      ranLong ? "Your previous turn ran long. Tighten this one to a single short paragraph." : "",
+    ].filter(Boolean)
+    chatMessages.push({ role: "user", content: `(${directives.join(" ")})` })
+  } else {
+    chatMessages.push({ role: "user", content: "(Continue the scene — your turn.)" })
   }
 
   await streamChat({
