@@ -119,21 +119,6 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     }
   }
 
-  const transcriptSummary = await ensureTranscriptSummary({
-    backend,
-    scenario,
-    messages,
-    signal: request.signal,
-  })
-
-  const speaker = await pickNextSpeaker({
-    backend,
-    context,
-    messages,
-    summary: transcriptSummary,
-    signal: request.signal,
-  })
-
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -141,6 +126,23 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
         controller.enqueue(encoder.encode(payload))
       }
+
+      const transcriptSummary = await ensureTranscriptSummary({
+        backend,
+        scenario,
+        messages,
+        signal: request.signal,
+        onStart: () => send("summarizing", {}),
+      })
+
+      send("picking", {})
+      const speaker = await pickNextSpeaker({
+        backend,
+        context,
+        messages,
+        summary: transcriptSummary,
+        signal: request.signal,
+      })
 
       const streamOneTurn = async (args: {
         speakerName: string

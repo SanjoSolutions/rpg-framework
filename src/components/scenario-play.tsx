@@ -328,7 +328,11 @@ export function ScenarioPlay({
             continue
           }
 
-          if (event === "intent") {
+          if (event === "summarizing") {
+            setStatus(pickPhrase("summarizing"))
+          } else if (event === "picking") {
+            setStatus(pickPhrase("picking"))
+          } else if (event === "intent") {
             const p = payload as {
               intent: string
               speakerId: string | null
@@ -847,6 +851,7 @@ function ConsentNote({ consent }: { consent: ConsentEvent }) {
 }
 
 type StatusPhase =
+  | "summarizing"
   | "picking"
   | "speaker"
   | "request"
@@ -865,9 +870,10 @@ function intentPhase(type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"): Statu
 }
 
 const STATUS_PHRASES: Record<StatusPhase, string[]> = {
+  summarizing: [
+    "Summarizing",
+  ],
   picking: [
-    "Spotting who steps up next",
-    "Scanning the room for a volunteer",
     "Choosing whose turn it is",
   ],
   speaker: [
