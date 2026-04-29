@@ -11,8 +11,13 @@
 // Output layout per target:
 //   dist/<target>/rpg(.exe)        SEA-injected node binary (the launcher)
 //   dist/<target>/app/             Next.js standalone tree (server.js + node_modules + .next + public)
-//   dist/<target>/data/            Created on first run for the SQLite DB
 //   dist/<target>/README.txt       Run instructions
+//
+// On first run, the SQLite database and cached TTS audio are stored in the
+// per-user app-data directory so they survive replacing the binary on update:
+//   Linux:   $XDG_DATA_HOME/rpg-framework  (default ~/.local/share/rpg-framework)
+//   macOS:   ~/Library/Application Support/rpg-framework
+//   Windows: %APPDATA%/rpg-framework
 
 import { spawnSync } from "node:child_process"
 import { createWriteStream, existsSync } from "node:fs"
@@ -335,12 +340,20 @@ function readmeFor(target, cfg) {
     `Layout:`,
     `  ${cfg.exeName}    The application binary (Node ${NODE_VERSION} + your app)`,
     `  app/      Next.js standalone runtime`,
-    `  data/     Created on first run; SQLite database lives here`,
     ``,
     `Run:`,
     isWin ? `  rpg.exe` : `  ./rpg`,
     ``,
     `Then open http://localhost:3000`,
+    ``,
+    `Your data (SQLite database and cached audio) lives in the per-user`,
+    `app-data folder so it survives replacing this binary on update:`,
+    isWin
+      ? `  %APPDATA%\\rpg-framework`
+      : isMac
+        ? `  ~/Library/Application Support/rpg-framework`
+        : `  ~/.local/share/rpg-framework  (or $XDG_DATA_HOME/rpg-framework)`,
+    `Override the location by setting RPG_DATA_DIR before launching.`,
   ]
   if (isMac) {
     lines.push(

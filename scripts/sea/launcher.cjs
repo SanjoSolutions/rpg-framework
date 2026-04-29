@@ -16,12 +16,16 @@ if (!fs.existsSync(serverPath)) {
   process.exit(1)
 }
 
-if (!process.env.RPG_DB_PATH) {
-  process.env.RPG_DB_PATH = path.join(exeDir, "data", "rpg.sqlite")
-}
-
 if (!process.env.HOSTNAME) {
   process.env.HOSTNAME = "127.0.0.1"
+}
+
+// Earlier builds stored the SQLite database next to the executable. The app
+// now persists data in the per-user app-data folder, so it survives replacing
+// this binary on update. Surface the legacy path so the app can migrate it on
+// first run if it exists.
+if (!process.env.RPG_LEGACY_DB_PATH) {
+  process.env.RPG_LEGACY_DB_PATH = path.join(exeDir, "data", "rpg.sqlite")
 }
 
 process.chdir(appDir)

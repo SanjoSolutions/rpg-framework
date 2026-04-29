@@ -1,20 +1,44 @@
 import Database from "better-sqlite3"
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, renameSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { getUserDataDir } from "./user-data-dir"
 
-const DB_PATH = process.env.RPG_DB_PATH ?? join(process.cwd(), "data", "rpg.sqlite")
+const DB_PATH = process.env.RPG_DB_PATH ?? join(getUserDataDir(), "rpg.sqlite")
 
 let dbInstance: Database.Database | null = null
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance
   mkdirSync(dirname(DB_PATH), { recursive: true })
+  migrateLegacyDb()
   const db = new Database(DB_PATH)
   db.pragma("journal_mode = WAL")
   db.pragma("foreign_keys = ON")
   applySchema(db)
   dbInstance = db
   return db
+}
+
+function migrateLegacyDb(): void {
+  if (existsSync(DB_PATH)) return
+  const candidates = [
+    process.env.RPG_LEGACY_DB_PATH?.trim(),
+    join(process.cwd(), "data", "rpg.sqlite"),
+  ]
+  for (const legacy of candidates) {
+    if (!legacy || legacy === DB_PATH) continue
+    if (!existsSync(legacy)) continue
+    try {
+      renameSync(legacy, DB_PATH)
+      const legacyWal = `${legacy}-wal`
+      const legacyShm = `${legacy}-shm`
+      if (existsSync(legacyWal)) renameSync(legacyWal, `${DB_PATH}-wal`)
+      if (existsSync(legacyShm)) renameSync(legacyShm, `${DB_PATH}-shm`)
+      return
+    } catch {
+      // The legacy file stays where it is; try the next candidate.
+    }
+  }
 }
 
 function applySchema(db: Database.Database): void {

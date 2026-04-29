@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { getUserDataDir } from "../user-data-dir"
 import { browserTtsStrategy } from "./browser/strategy"
 import { xaiTtsStrategy } from "./xai/strategy"
 import type { TtsBackend, TtsStrategy, TtsSynthesizeArgs } from "./types"
 
 export type { TtsBackend, TtsStrategy }
 
-const AUDIO_BASE_DIR = join(process.cwd(), "public", "audio")
+export const AUDIO_BASE_DIR = join(getUserDataDir(), "audio")
 const DEFAULT_BACKEND: TtsBackend = "xai"
 
 const STRATEGIES: Record<TtsBackend, TtsStrategy> = {
@@ -27,10 +28,10 @@ function getAudioFilename(text: string): string {
 }
 
 export function getAudioUrlPath(voice: string, text: string): string {
-  return `/audio/${encodeURIComponent(voice)}/${getAudioFilename(text)}`
+  return `/api/audio/${encodeURIComponent(voice)}/${getAudioFilename(text)}`
 }
 
-function getAudioFilePath(voice: string, text: string): string {
+export function getAudioFilePath(voice: string, text: string): string {
   return join(AUDIO_BASE_DIR, voice, getAudioFilename(text))
 }
 
