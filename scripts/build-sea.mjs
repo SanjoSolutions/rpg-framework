@@ -166,6 +166,10 @@ async function buildTarget(target, blobPath) {
 
   await stageApp(outDir, cfg)
 
+  await cp(join(projectRoot, "docs"), join(outDir, "docs"), {
+    recursive: true,
+  })
+
   await writeFile(
     join(outDir, "README.txt"),
     readmeFor(target, cfg),
@@ -340,6 +344,7 @@ function readmeFor(target, cfg) {
     `Layout:`,
     `  ${cfg.exeName}    The application binary (Node ${NODE_VERSION} + your app)`,
     `  app/      Next.js standalone runtime`,
+    `  docs/     API reference and other documentation`,
     ``,
     `Run:`,
     isWin ? `  rpg.exe` : `  ./rpg`,
