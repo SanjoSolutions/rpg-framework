@@ -213,6 +213,11 @@ export function ScenarioPlay({
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel()
     }
+    if (runningRef.current) {
+      runningRef.current = false
+      setRunning(false)
+      setStopping(true)
+    }
   }, [voiceEnabled])
 
   useEffect(() => {
