@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "build:sea": "node scripts/build-sea.mjs"
+    "pack": "node scripts/pack.mjs",
+    "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "@ai-sdk/xai": "^3.0.57",

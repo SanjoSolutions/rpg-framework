@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Build a Node.js Single Executable Application (SEA) for one or more
-// targets. Run with: pnpm build:sea [target ...]
+// Pack a prebuilt Next.js standalone tree into per-target Node.js
+// Single Executable Application (SEA) bundles. Run with: pnpm run pack [target ...]
 //
 // Targets: linux-x64 | darwin-x64 | darwin-arm64 | win32-x64
 // Default (no args): all four.
 //
-// Prereqs: `pnpm build` has produced .next/standalone/. The script will
-// run it for you if the standalone tree is missing.
+// Prereqs: `pnpm build` has produced .next/standalone/. This script will
+// fail fast if the standalone tree is missing — run `pnpm build` first.
 //
 // Output layout per target:
 //   dist/<target>/rpg-framework(.exe)  SEA-injected node binary (the launcher)
@@ -99,7 +99,7 @@ for (const t of targets) {
 
 await mkdir(cacheDir, { recursive: true })
 
-await ensureStandaloneBuild()
+requireStandaloneBuild()
 const blobPath = await generateSeaBlob()
 
 for (const target of targets) {
@@ -118,11 +118,13 @@ async function readSqliteVersion() {
   return raw.replace(/^[^\d]*/, "")
 }
 
-async function ensureStandaloneBuild() {
+function requireStandaloneBuild() {
   const standalone = join(projectRoot, ".next", "standalone", "server.js")
   if (existsSync(standalone)) return
-  console.log("> Running `next build` (no existing standalone output)...")
-  run("pnpm", ["build"], { cwd: projectRoot })
+  console.error(
+    "Missing .next/standalone/server.js. Run `pnpm build` before `pnpm run pack`.",
+  )
+  process.exit(1)
 }
 
 async function generateSeaBlob() {
