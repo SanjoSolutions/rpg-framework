@@ -2,10 +2,12 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ScenarioPlay } from "@/components/scenario-play"
 import { Button } from "@/components/ui/button"
+import { getValidActivation } from "@/lib/activation"
 import { getCharacter } from "@/lib/characters"
 import { getLocation, type Location } from "@/lib/locations"
 import { listMessageMetaForScenario, listMessages } from "@/lib/messages"
 import { getScenario } from "@/lib/scenarios"
+import { FREE_TURN_LIMIT, getFreeTurnsUsed } from "@/lib/turn-usage"
 
 export const dynamic = "force-dynamic"
 
@@ -26,6 +28,7 @@ export default async function PlayScenarioPage({
     .filter((l): l is Location => l != null)
   const messages = listMessages(scenario.id)
   const messageMeta = listMessageMetaForScenario(scenario.id)
+  const activationRequired = !getValidActivation() && getFreeTurnsUsed() >= FREE_TURN_LIMIT
   const activeLocation = scenario.locationId
     ? attachedLocations.find((l) => l.id === scenario.locationId) ?? null
     : null
@@ -54,6 +57,7 @@ export default async function PlayScenarioPage({
         initialMessages={messages}
         initialMessageMeta={messageMeta}
         characters={characters}
+        initialActivationRequired={activationRequired}
       />
     </div>
   )

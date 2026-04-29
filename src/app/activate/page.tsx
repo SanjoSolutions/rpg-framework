@@ -1,12 +1,29 @@
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { buildAuthorizeUrl, getValidActivation } from "@/lib/activation"
+import { isSafeInternalPath } from "@/lib/safe-path"
 import { FREE_TURN_LIMIT, getFreeTurnsUsed } from "@/lib/turn-usage"
+import Link from "next/link"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export default function ActivatePage() {
+interface SearchParams {
+  returnTo?: string | string[]
+}
+
+function pickReturnTo(searchParams: SearchParams | undefined): string {
+  const raw = searchParams?.returnTo
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return isSafeInternalPath(value) ? value : "/"
+}
+
+export default async function ActivatePage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>
+}) {
+  const sp = (await searchParams) ?? {}
+  const returnTo = pickReturnTo(sp)
   const active = !!getValidActivation()
   const used = getFreeTurnsUsed()
   const remaining = Math.max(0, FREE_TURN_LIMIT - used)
@@ -27,24 +44,40 @@ export default function ActivatePage() {
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Free trial: {remaining} of {FREE_TURN_LIMIT} turns remaining. Activate any time with the
-            itch.io account you used to purchase the app to unlock unlimited turns. All other
-            features stay free regardless.
+            Free trial: {remaining} of {FREE_TURN_LIMIT} turns remaining.
           </p>
         )}
       </header>
 
-      <div className="flex justify-center">
-        {active ? (
+      {active ? (
+        <div className="flex justify-center">
           <Button asChild variant="secondary">
-            <Link href="/">Back to app</Link>
+            <Link href={returnTo}>Back to app</Link>
           </Button>
-        ) : (
-          <Button asChild>
-            <Link href={buildAuthorizeUrl()}>Activate with itch.io account</Link>
-          </Button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <section className="space-y-3">
+            <div className="flex justify-center">
+              <Button asChild>
+                <Link href={buildAuthorizeUrl(returnTo)}>Activate with itch.io account</Link>
+              </Button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex justify-center">
+              <iframe
+                title="Buy RPG Framework on itch.io"
+                src="https://itch.io/embed/4522765"
+                width={552}
+                height={167}
+                style={{ border: 0, maxWidth: "100%" }}
+              />
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

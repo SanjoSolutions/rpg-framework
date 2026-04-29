@@ -12,6 +12,8 @@ import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import { XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 interface SpeakerInfo {
@@ -46,6 +48,7 @@ interface Props {
   attachedLocations: Location[]
   initialActiveLocationId: string | null
   initialCharacterLocations: Record<string, string | null>
+  initialActivationRequired?: boolean
 }
 
 function seedMessageConsents(
@@ -77,6 +80,7 @@ export function ScenarioPlay({
   attachedLocations,
   initialActiveLocationId,
   initialCharacterLocations,
+  initialActivationRequired = false,
 }: Props) {
   const { voiceEnabled, setVoiceEnabled, ttsBackend, memoriesEnabled } = useSettings()
   const useBrowserTts = isBrowserTtsBackend(ttsBackend)
@@ -107,6 +111,11 @@ export function ScenarioPlay({
   }, [showLocations])
   const runningRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
+  const [activationRequired, setActivationRequired] = useState(initialActivationRequired)
+  const pathname = usePathname()
+  const activateHref = pathname
+    ? `/activate?returnTo=${encodeURIComponent(pathname)}`
+    : "/activate"
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
   const [sceneMemories, setSceneMemories] = useState<
     { characterId: string; characterName: string; memories: Memory[] }[]
@@ -279,6 +288,7 @@ export function ScenarioPlay({
       return
     }
     setError(null)
+    setActivationRequired(false)
     setBusy(true)
     setPendingTurn(null)
     setStatus(pickPhrase("picking"))
@@ -296,6 +306,12 @@ export function ScenarioPlay({
         method: "POST",
         signal: controller.signal,
       })
+      if (res.status === 402) {
+        setActivationRequired(true)
+        runningRef.current = false
+        setRunning(false)
+        return
+      }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "")
         throw new Error(text || `Turn failed (${res.status})`)
@@ -441,6 +457,8 @@ export function ScenarioPlay({
       if (turnGenRef.current === myGen) {
         setError(err instanceof Error ? err.message : "Turn failed")
       }
+      runningRef.current = false
+      setRunning(false)
     } finally {
       abortsRef.current.delete(controller)
       if (turnGenRef.current === myGen) {
@@ -566,6 +584,19 @@ export function ScenarioPlay({
             </div>
           )}
           {status && busy && <StatusPill text={status} />}
+          {activationRequired && (
+            <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
+              <div className="font-medium">Free turns used up</div>
+              <p className="text-sm text-muted-foreground">
+                You&apos;ve used all your free turns. Activate the app to keep playing.
+              </p>
+              <div>
+                <Button asChild size="sm">
+                  <Link href={activateHref}>Activate</Link>
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         {showMemories && (
           <aside className="w-72 shrink-0 border-l border-border overflow-auto px-4 py-4">

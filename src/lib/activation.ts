@@ -9,7 +9,6 @@ const logger = getLogger({ module: "activation" })
 const ITCHIO_API_BASE = "https://itch.io/api/1"
 const ITCHIO_OAUTH_URL = "https://itch.io/user/oauth"
 const REVERIFY_INTERVAL_MS = 24 * 60 * 60 * 1000
-const IS_DEV = process.env.NODE_ENV === "development"
 
 export interface Activation {
   accessToken: string
@@ -113,10 +112,6 @@ interface ItchOwnedKeysResponse {
 }
 
 export async function userOwnsGame(accessToken: string, gameId: number): Promise<boolean> {
-  if (IS_DEV) {
-    logger.warn("Dev mode: ownership check bypassed")
-    return true
-  }
   const url = `${ITCHIO_API_BASE}/${encodeURIComponent(accessToken)}/my-owned-keys?game_id=${gameId}`
   const res = await fetch(url)
   const data = (await res.json().catch(() => ({}))) as ItchOwnedKeysResponse
