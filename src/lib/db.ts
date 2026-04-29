@@ -98,12 +98,14 @@ function applySchema(db: Database.Database): void {
       scenario_id TEXT NOT NULL,
       number INTEGER NOT NULL,
       active_location_id TEXT,
+      player_location_id TEXT,
       transcript_summary TEXT NOT NULL DEFAULT '',
       transcript_summary_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       UNIQUE (scenario_id, number),
       FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
-      FOREIGN KEY (active_location_id) REFERENCES locations(id) ON DELETE SET NULL
+      FOREIGN KEY (active_location_id) REFERENCES locations(id) ON DELETE SET NULL,
+      FOREIGN KEY (player_location_id) REFERENCES locations(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS instance_characters (
@@ -278,6 +280,14 @@ function applySchema(db: Database.Database): void {
     INSERT OR IGNORE INTO scenario_locations (scenario_id, location_id)
     SELECT scenario_id, location_id FROM scenario_characters WHERE location_id IS NOT NULL
   `)
+
+  const instanceColumns = db
+    .prepare("SELECT name FROM pragma_table_info('scenario_instances')")
+    .all() as { name: string }[]
+  const instanceColumnNames = new Set(instanceColumns.map((c) => c.name))
+  if (!instanceColumnNames.has("player_location_id")) {
+    db.exec("ALTER TABLE scenario_instances ADD COLUMN player_location_id TEXT")
+  }
 
   backfillScenarioInstances(db)
 

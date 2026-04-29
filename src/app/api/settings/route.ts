@@ -13,6 +13,7 @@ const settingsSchema = z.object({
   xaiApiKey: z.string().max(500).optional(),
   ollamaUrl: z.string().max(500).optional(),
   ollamaModel: z.string().max(200).optional(),
+  playerName: z.string().trim().max(120).optional(),
   requireConsent: z.boolean().optional(),
   memoriesEnabled: z.boolean().optional(),
   learnNames: z.boolean().optional(),

@@ -4,6 +4,10 @@
 
 * After participation the player should be listed as being in the location. They can also leave the location again after that.
 
+* Do the forms use the proper ShadCN patterns?
+
+* Summarize based on content length
+
 * Is API.md shipped?
 
 ## Pre-release

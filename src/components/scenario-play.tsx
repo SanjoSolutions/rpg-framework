@@ -50,6 +50,7 @@ interface Props {
   characters: Character[]
   attachedLocations: Location[]
   initialActiveLocationId: string | null
+  initialPlayerLocationId: string | null
   initialCharacterLocations: Record<string, string | null>
   initialActivationRequired?: boolean
 }
@@ -83,17 +84,19 @@ export function ScenarioPlay({
   characters,
   attachedLocations,
   initialActiveLocationId,
+  initialPlayerLocationId,
   initialCharacterLocations,
   initialActivationRequired = false,
 }: Props) {
   const router = useRouter()
   const apiBase = `/api/scenarios/${scenarioId}/${instanceNumber}`
-  const { voiceEnabled, setVoiceEnabled, ttsBackend, memoriesEnabled } = useSettings()
+  const { voiceEnabled, setVoiceEnabled, ttsBackend, memoriesEnabled, playerName } = useSettings()
   const useBrowserTts = isBrowserTtsBackend(ttsBackend)
   const { showRawMessages, showMemories: showMemoriesPref, showRequestInternals } = useDevSidebar()
   const showMemories = showMemoriesPref && memoriesEnabled
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [activeLocationId, setActiveLocationId] = useState<string | null>(initialActiveLocationId)
+  const [playerLocationId, setPlayerLocationId] = useState<string | null>(initialPlayerLocationId)
   const [placement, setPlacement] = useState<Record<string, string | null>>(initialCharacterLocations)
   const [input, setInput] = useState("")
   const [messageRole, setMessageRole] = useState<"director" | "participant">("director")
@@ -159,6 +162,28 @@ export function ScenarioPlay({
       })
     } catch {
       // best effort — UI state stays
+    }
+  }
+
+  async function movePlayer(locationId: string | null) {
+    const previous = playerLocationId
+    setPlayerLocationId(locationId)
+    try {
+      const res = await fetch(`${apiBase}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: "player", locationId }),
+      })
+      if (!res.ok) {
+        setPlayerLocationId(previous)
+        return
+      }
+      const data = (await res.json().catch(() => ({}))) as { message?: Message }
+      if (data.message) {
+        setMessages((current) => [...current, data.message as Message])
+      }
+    } catch {
+      setPlayerLocationId(previous)
     }
   }
 
@@ -488,8 +513,11 @@ export function ScenarioPlay({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error ?? "Send failed")
       }
-      const data = (await res.json()) as { message: Message }
+      const data = (await res.json()) as { message: Message; playerLocationId?: string | null }
       setMessages((current) => [...current, data.message])
+      if (data.playerLocationId !== undefined) {
+        setPlayerLocationId(data.playerLocationId)
+      }
       setInput("")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Send failed")
@@ -626,8 +654,11 @@ export function ScenarioPlay({
               characters={characters}
               activeLocationId={activeLocationId}
               locationOf={locationOf}
+              playerLocationId={playerLocationId}
+              playerName={playerName}
               onActivate={switchActiveScene}
               onMove={moveCharacter}
+              onMovePlayer={movePlayer}
               disabled={busy}
               onClose={() => setShowLocations(false)}
             />
@@ -719,8 +750,11 @@ function LocationsPanel({
   characters,
   activeLocationId,
   locationOf,
+  playerLocationId,
+  playerName,
   onActivate,
   onMove,
+  onMovePlayer,
   disabled,
   onClose,
 }: {
@@ -728,8 +762,11 @@ function LocationsPanel({
   characters: Character[]
   activeLocationId: string | null
   locationOf: (characterId: string) => string | null
+  playerLocationId: string | null
+  playerName: string
   onActivate: (locationId: string) => void
   onMove: (characterId: string, locationId: string) => void
+  onMovePlayer: (locationId: string | null) => void
   disabled: boolean
   onClose: () => void
 }) {
@@ -766,47 +803,93 @@ function LocationsPanel({
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium truncate">{loc.name}</span>
-              {active ? (
-                <span className="text-[10px] uppercase tracking-wide text-primary">scene</span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onActivate(loc.id)}
-                  className="text-[10px] underline text-muted-foreground hover:text-foreground"
-                >
-                  switch here
-                </button>
-              )}
+              <span className="flex items-center gap-2">
+                {playerLocationId !== loc.id && (
+                  <button
+                    type="button"
+                    onClick={() => onMovePlayer(loc.id)}
+                    className="text-[10px] underline text-muted-foreground hover:text-foreground"
+                  >
+                    join
+                  </button>
+                )}
+                {active ? (
+                  <span className="text-[10px] uppercase tracking-wide text-primary">scene</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onActivate(loc.id)}
+                    className="text-[10px] underline text-muted-foreground hover:text-foreground"
+                  >
+                    switch here
+                  </button>
+                )}
+              </span>
             </div>
-            {here.length === 0 ? (
-              <span className="text-muted-foreground italic">empty</span>
-            ) : (
-              <ul className="space-y-0.5 max-h-32 overflow-y-auto pr-1">
-                {here.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{c.name}</span>
-                    {moveOptions.length > 0 && (
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) onMove(c.id, e.target.value)
-                        }}
-                        disabled={disabled}
-                        aria-label={`Move ${c.name}`}
-                        className="rounded border border-input bg-background px-1 text-[10px]"
-                      >
-                        <option value="">move…</option>
-                        {moveOptions.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            → {opt.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {(() => {
+              const playerHere = playerLocationId === loc.id
+              if (here.length === 0 && !playerHere) {
+                return <span className="text-muted-foreground italic">empty</span>
+              }
+              return (
+                <ul className="space-y-0.5 max-h-32 overflow-y-auto pr-1">
+                  {playerHere && (
+                    <li className="flex items-center justify-between gap-2">
+                      <span className="truncate font-medium">{playerName}</span>
+                      <span className="flex items-center gap-1">
+                        {moveOptions.length > 0 && (
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) onMovePlayer(e.target.value)
+                            }}
+                            aria-label={`Move ${playerName}`}
+                            className="rounded border border-input bg-background px-1 text-[10px]"
+                          >
+                            <option value="">move…</option>
+                            {moveOptions.map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                → {opt.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onMovePlayer(null)}
+                          className="text-[10px] underline text-muted-foreground hover:text-foreground"
+                        >
+                          leave
+                        </button>
+                      </span>
+                    </li>
+                  )}
+                  {here.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{c.name}</span>
+                      {moveOptions.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) onMove(c.id, e.target.value)
+                          }}
+                          disabled={disabled}
+                          aria-label={`Move ${c.name}`}
+                          className="rounded border border-input bg-background px-1 text-[10px]"
+                        >
+                          <option value="">move…</option>
+                          {moveOptions.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                              → {opt.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )
+            })()}
           </div>
         )
       })}

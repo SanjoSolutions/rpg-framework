@@ -70,6 +70,7 @@ export default async function PlayScenarioInstancePage({
         scenarioId={scenario.id}
         instanceNumber={instance.number}
         initialActiveLocationId={instance.activeLocationId}
+        initialPlayerLocationId={instance.playerLocationId}
         initialCharacterLocations={instance.characterLocations}
         attachedLocations={attachedLocations}
         initialMessages={messages}

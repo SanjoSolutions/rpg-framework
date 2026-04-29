@@ -7,10 +7,13 @@ export interface AppSettings {
   xaiApiKey: string
   ollamaUrl: string
   ollamaModel: string
+  playerName: string
   requireConsent: boolean
   memoriesEnabled: boolean
   learnNames: boolean
 }
+
+export const DEFAULT_PLAYER_NAME = "Player"
 
 export const DEFAULT_SETTINGS: AppSettings = {
   llmBackend: "ollama",
@@ -18,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   xaiApiKey: "",
   ollamaUrl: "http://localhost:11434",
   ollamaModel: "",
+  playerName: DEFAULT_PLAYER_NAME,
   requireConsent: false,
   memoriesEnabled: false,
   learnNames: false,

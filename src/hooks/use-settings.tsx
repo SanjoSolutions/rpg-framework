@@ -48,6 +48,8 @@ interface SettingsState {
   setLlmBackend: (value: LLMBackend) => void
   ttsBackend: TtsBackend
   setTtsBackend: (value: TtsBackend) => void
+  playerName: string
+  setPlayerName: (value: string) => void
   requireConsent: boolean
   setRequireConsent: (value: boolean) => void
   memoriesEnabled: boolean
@@ -79,6 +81,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           if (typeof data.xaiApiKey === "string") next.xaiApiKey = data.xaiApiKey
           if (typeof data.ollamaUrl === "string") next.ollamaUrl = data.ollamaUrl
           if (typeof data.ollamaModel === "string") next.ollamaModel = data.ollamaModel
+          if (typeof data.playerName === "string" && data.playerName.trim()) next.playerName = data.playerName
           if (typeof data.requireConsent === "boolean") next.requireConsent = data.requireConsent
           if (typeof data.memoriesEnabled === "boolean") next.memoriesEnabled = data.memoriesEnabled
           if (typeof data.learnNames === "boolean") next.learnNames = data.learnNames
@@ -109,6 +112,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   )
   const setTtsBackend = useCallback(
     (value: TtsBackend) => updateSettings({ ttsBackend: value }),
+    [updateSettings],
+  )
+  const setPlayerName = useCallback(
+    (value: string) => updateSettings({ playerName: value }),
     [updateSettings],
   )
   const setRequireConsent = useCallback(
@@ -148,6 +155,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setLlmBackend,
         ttsBackend: settings.ttsBackend,
         setTtsBackend,
+        playerName: settings.playerName,
+        setPlayerName,
         requireConsent: settings.requireConsent,
         setRequireConsent,
         memoriesEnabled: settings.memoriesEnabled,

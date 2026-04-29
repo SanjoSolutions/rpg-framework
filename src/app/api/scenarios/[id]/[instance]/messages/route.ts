@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { getInstanceByNumber } from "@/lib/instances"
+import { getInstanceByNumber, setInstancePlayerLocation } from "@/lib/instances"
 import { appendMessage, listInstanceMessages } from "@/lib/messages"
 import { getScenario, touchScenario } from "@/lib/scenarios"
+import { getSettings } from "@/lib/settings"
 import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
@@ -44,15 +45,32 @@ export async function POST(
     return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 })
   }
   const role = parsed.data.role ?? "director"
+  const playerName = getSettings().playerName
   const message = appendMessage({
     scenarioId: id,
     instanceId: instance.id,
     speakerKind: role === "director" ? "narrator" : "user",
     speakerName:
-      role === "director" ? "Director" : parsed.data.speakerName?.trim() || "You",
+      role === "director"
+        ? "Director"
+        : parsed.data.speakerName?.trim() || playerName,
     content: parsed.data.content,
   })
+  let playerLocationId = instance.playerLocationId
+  if (
+    role === "participant" &&
+    instance.playerLocationId === null &&
+    instance.activeLocationId
+  ) {
+    setInstancePlayerLocation(instance.id, instance.activeLocationId)
+    playerLocationId = instance.activeLocationId
+    dispatchWebhook("scenario.player_moved", {
+      scenarioId: id,
+      instanceId: instance.id,
+      locationId: playerLocationId,
+    })
+  }
   touchScenario(id)
   dispatchWebhook("message.created", { message })
-  return NextResponse.json({ message }, { status: 201 })
+  return NextResponse.json({ message, playerLocationId }, { status: 201 })
 }

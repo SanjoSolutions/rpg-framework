@@ -1,7 +1,7 @@
 import { getDb } from "./db"
 import { FEATURES } from "./feature-flags"
 import { LLM_BACKENDS, type LLMBackend } from "./llm/types"
-import { DEFAULT_SETTINGS, type AppSettings } from "./settings-types"
+import { DEFAULT_PLAYER_NAME, DEFAULT_SETTINGS, type AppSettings } from "./settings-types"
 import { TTS_BACKENDS, type TtsBackend } from "./tts/types"
 
 export { DEFAULT_SETTINGS, type AppSettings }
@@ -48,6 +48,7 @@ export function getSettings(): AppSettings {
     xaiApiKey: map.get("xaiApiKey") ?? "",
     ollamaUrl: map.get("ollamaUrl") ?? DEFAULT_SETTINGS.ollamaUrl,
     ollamaModel: map.get("ollamaModel") ?? DEFAULT_SETTINGS.ollamaModel,
+    playerName: (map.get("playerName")?.trim() || DEFAULT_PLAYER_NAME),
     requireConsent: FEATURES.requireConsent && map.get("requireConsent") === "true",
     memoriesEnabled: FEATURES.memoriesEnabled && map.get("memoriesEnabled") === "true",
     learnNames: FEATURES.learnNames && map.get("learnNames") === "true",
@@ -73,6 +74,10 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.ollamaModel !== undefined) {
     stmt.run("ollamaModel", patch.ollamaModel)
+  }
+  if (patch.playerName !== undefined) {
+    const trimmed = patch.playerName.trim()
+    stmt.run("playerName", trimmed || DEFAULT_PLAYER_NAME)
   }
   if (patch.requireConsent !== undefined) {
     stmt.run("requireConsent", String(patch.requireConsent))

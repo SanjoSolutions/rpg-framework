@@ -17,6 +17,7 @@ export const WEBHOOK_EVENTS = [
   "scenario.deleted",
   "scenario.scene_activated",
   "scenario.character_moved",
+  "scenario.player_moved",
   "message.created",
   "message.deleted",
   "message.cleared",

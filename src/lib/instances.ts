@@ -7,6 +7,7 @@ export interface ScenarioInstance {
   scenarioId: string
   number: number
   activeLocationId: string | null
+  playerLocationId: string | null
   characterLocations: Record<string, string | null>
   transcriptSummary: string
   transcriptSummaryCount: number
@@ -18,6 +19,7 @@ interface InstanceRow {
   scenario_id: string
   number: number
   active_location_id: string | null
+  player_location_id: string | null
   transcript_summary: string
   transcript_summary_count: number
   created_at: number
@@ -45,6 +47,7 @@ function rowToInstance(row: InstanceRow): ScenarioInstance {
     scenarioId: row.scenario_id,
     number: row.number,
     activeLocationId: row.active_location_id,
+    playerLocationId: row.player_location_id,
     characterLocations: loadInstanceCharacters(row.id),
     transcriptSummary: row.transcript_summary,
     transcriptSummaryCount: row.transcript_summary_count,
@@ -137,6 +140,17 @@ export function setInstanceActiveLocation(
   const db = getDb()
   const result = db
     .prepare("UPDATE scenario_instances SET active_location_id = ? WHERE id = ?")
+    .run(locationId, instanceId)
+  return result.changes > 0
+}
+
+export function setInstancePlayerLocation(
+  instanceId: string,
+  locationId: string | null,
+): boolean {
+  const db = getDb()
+  const result = db
+    .prepare("UPDATE scenario_instances SET player_location_id = ? WHERE id = ?")
     .run(locationId, instanceId)
   return result.changes > 0
 }

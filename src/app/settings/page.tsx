@@ -1,17 +1,21 @@
 "use client"
 
-import { ChevronRight } from "lucide-react"
-import { useState } from "react"
 import { LlmBackendCard } from "@/components/llm-backend-card"
 import { TtsBackendCard } from "@/components/tts-backend-card"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { WebhooksManager } from "@/components/webhooks-manager"
 import { useSettings } from "@/hooks/use-settings"
 import { FEATURES } from "@/lib/feature-flags"
+import { DEFAULT_PLAYER_NAME } from "@/lib/settings-types"
+import { ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
 
 export default function SettingsPage() {
   const {
     loaded,
+    playerName,
+    setPlayerName,
     requireConsent,
     setRequireConsent,
     memoriesEnabled,
@@ -19,6 +23,10 @@ export default function SettingsPage() {
     learnNames,
     setLearnNames,
   } = useSettings()
+  const [playerNameDraft, setPlayerNameDraft] = useState(playerName)
+  useEffect(() => {
+    setPlayerNameDraft(playerName)
+  }, [playerName])
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const showRequireConsent = FEATURES.requireConsent
@@ -30,6 +38,25 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
       <h1 className="text-2xl font-bold">Settings</h1>
+
+      <section className="space-y-2">
+        <label htmlFor="player-name" className="font-medium">
+          Player name
+        </label>
+        <Input
+          id="player-name"
+          value={playerNameDraft}
+          onChange={(e) => setPlayerNameDraft(e.target.value)}
+          onBlur={() => {
+            const trimmed = playerNameDraft.trim() || DEFAULT_PLAYER_NAME
+            setPlayerNameDraft(trimmed)
+            if (trimmed !== playerName) setPlayerName(trimmed)
+          }}
+          disabled={!loaded}
+          maxLength={120}
+          placeholder={DEFAULT_PLAYER_NAME}
+        />
+      </section>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Backends</h2>

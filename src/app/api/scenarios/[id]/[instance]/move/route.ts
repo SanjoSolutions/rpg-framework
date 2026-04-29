@@ -4,8 +4,11 @@ import {
   getInstanceByNumber,
   setInstanceActiveLocation,
   setInstanceCharacterLocation,
+  setInstancePlayerLocation,
 } from "@/lib/instances"
+import { appendMessage } from "@/lib/messages"
 import { getScenario, touchScenario } from "@/lib/scenarios"
+import { getSettings } from "@/lib/settings"
 import { dispatchWebhook } from "@/lib/webhooks"
 
 export const runtime = "nodejs"
@@ -14,6 +17,7 @@ const moveSchema = z.object({
   characterId: z.string().nullable().optional(),
   locationId: z.string().nullable(),
   setActive: z.boolean().optional(),
+  target: z.literal("player").optional(),
 })
 
 function resolveInstance(scenarioId: string, instanceParam: string) {
@@ -38,7 +42,31 @@ export async function POST(
     return NextResponse.json({ error: "Invalid input" }, { status: 400 })
   }
 
-  const { characterId, locationId, setActive } = parsed.data
+  const { characterId, locationId, setActive, target } = parsed.data
+
+  if (target === "player") {
+    const previousLocationId = instance.playerLocationId
+    setInstancePlayerLocation(instance.id, locationId)
+    touchScenario(scenario.id)
+    dispatchWebhook("scenario.player_moved", {
+      scenarioId: scenario.id,
+      instanceId: instance.id,
+      locationId,
+    })
+    if (locationId === null && previousLocationId !== null) {
+      const playerName = getSettings().playerName
+      const message = appendMessage({
+        scenarioId: scenario.id,
+        instanceId: instance.id,
+        speakerKind: "narrator",
+        speakerName: "Director",
+        content: `(${playerName} has left the location.)`,
+      })
+      dispatchWebhook("message.created", { message })
+      return NextResponse.json({ ok: true, message })
+    }
+    return NextResponse.json({ ok: true })
+  }
 
   if (characterId) {
     setInstanceCharacterLocation(instance.id, characterId, locationId)
