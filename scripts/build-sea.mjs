@@ -9,7 +9,7 @@
 // run it for you if the standalone tree is missing.
 //
 // Output layout per target:
-//   dist/<target>/rpg(.exe)        SEA-injected node binary (the launcher)
+//   dist/<target>/rpg-framework(.exe)  SEA-injected node binary (the launcher)
 //   dist/<target>/app/             Next.js standalone tree (server.js + node_modules + .next + public)
 //   dist/<target>/README.txt       Run instructions
 //
@@ -53,7 +53,7 @@ const TARGETS = {
     nodeBinaryInArchive: `node-v${NODE_VERSION}-linux-x64/bin/node`,
     sqlitePlatform: "linux",
     sqliteArch: "x64",
-    exeName: "rpg",
+    exeName: "rpg-framework",
     machoSegment: false,
   },
   "darwin-x64": {
@@ -63,7 +63,7 @@ const TARGETS = {
     nodeBinaryInArchive: `node-v${NODE_VERSION}-darwin-x64/bin/node`,
     sqlitePlatform: "darwin",
     sqliteArch: "x64",
-    exeName: "rpg",
+    exeName: "rpg-framework",
     machoSegment: true,
   },
   "darwin-arm64": {
@@ -73,7 +73,7 @@ const TARGETS = {
     nodeBinaryInArchive: `node-v${NODE_VERSION}-darwin-arm64/bin/node`,
     sqlitePlatform: "darwin",
     sqliteArch: "arm64",
-    exeName: "rpg",
+    exeName: "rpg-framework",
     machoSegment: true,
   },
   "win32-x64": {
@@ -83,7 +83,7 @@ const TARGETS = {
     nodeBinaryInArchive: `node-v${NODE_VERSION}-win-x64/node.exe`,
     sqlitePlatform: "win32",
     sqliteArch: "x64",
-    exeName: "rpg.exe",
+    exeName: "rpg-framework.exe",
     machoSegment: false,
   },
 }
@@ -347,7 +347,7 @@ function readmeFor(target, cfg) {
     `  docs/     API reference and other documentation`,
     ``,
     `Run:`,
-    isWin ? `  rpg.exe` : `  ./rpg`,
+    isWin ? `  rpg-framework.exe` : `  ./rpg-framework`,
     ``,
     `Then open http://localhost:3000`,
     ``,
@@ -365,7 +365,7 @@ function readmeFor(target, cfg) {
       ``,
       `macOS note: this binary was produced on a non-macOS host and is unsigned.`,
       `On first run, macOS Gatekeeper will block it. Either ad-hoc sign it:`,
-      `  codesign --sign - ./rpg`,
+      `  codesign --sign - ./rpg-framework`,
       `or right-click > Open the first time and confirm.`,
     )
   }
