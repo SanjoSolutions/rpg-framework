@@ -42,8 +42,10 @@ export function CharacterForm({ mode, character }: Props) {
 
   const getEntity = () => ({ name, appearance, description, voice })
 
-  const voiceOptions: string[] =
+  const backendVoices: string[] =
     ttsBackend === "browser" ? browserVoices : [...XAI_VOICES]
+  const voiceOptions =
+    voice && !backendVoices.includes(voice) ? [voice, ...backendVoices] : backendVoices
   const voiceSelectValue = voice && voiceOptions.includes(voice) ? voice : NO_VOICE
 
   async function onSubmit(event: React.FormEvent) {
@@ -204,7 +206,7 @@ function useBrowserVoices(enabled: boolean): string[] {
       const all = synth.getVoices()
       const english = all.filter((v) => v.lang.toLowerCase().startsWith("en"))
       const pool = english.length > 0 ? english : all
-      setVoices(pool.map((v) => v.name))
+      setVoices(Array.from(new Set(pool.map((v) => v.name))))
     }
     refresh()
     synth.addEventListener("voiceschanged", refresh)

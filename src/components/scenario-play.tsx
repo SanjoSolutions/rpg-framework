@@ -11,7 +11,7 @@ import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
-import { XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
+import { XAI_DEFAULT_VOICE, XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -251,10 +251,9 @@ export function ScenarioPlay({
     if (!voiceEnabled) return
     if (!characterId) return
     const character = characters.find((c) => c.id === characterId)
-    if (!character?.voice) return
+    const voice = character?.voice ?? (useBrowserTts ? "" : XAI_DEFAULT_VOICE)
     const trimmed = text.trim()
     if (!trimmed) return
-    const voice = character.voice
     const myToken = ttsTokenRef.current
     ttsChainRef.current = ttsChainRef.current.catch(() => {}).then(() => {
       if (ttsTokenRef.current !== myToken) return
@@ -398,12 +397,11 @@ export function ScenarioPlay({
               p.characterId
             ) {
               const character = characters.find((c) => c.id === p.characterId)
-              if (character?.voice) {
-                sentenceSpeakerRef.current = new SentenceSpeaker(
-                  speakerPrefix(p.characterId),
-                  character.voice,
-                )
-              }
+              const fallbackVoice = character?.voice ?? (useBrowserTts ? "" : XAI_DEFAULT_VOICE)
+              sentenceSpeakerRef.current = new SentenceSpeaker(
+                speakerPrefix(p.characterId),
+                fallbackVoice,
+              )
             }
           } else if (event === "delta" && speaker) {
             const delta = (payload as { content: string }).content
@@ -584,6 +582,22 @@ export function ScenarioPlay({
             </div>
           )}
           {status && busy && <StatusPill text={status} />}
+          {!voiceEnabled && !activationRequired && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  resetTtsQueue()
+                  void generateTurn()
+                }}
+                disabled={busy || !hasCharacters}
+              >
+                Next turn
+              </Button>
+            </div>
+          )}
           {activationRequired && (
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
               <div className="font-medium">Free turns used up</div>
@@ -671,22 +685,23 @@ export function ScenarioPlay({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {running || busy ? (
-              <Button type="button" variant="outline" onClick={stop} disabled={stopping}>
-                {stopping ? "Stopping…" : "Stop"}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  void startLoop()
-                }}
-                disabled={!hasCharacters}
-              >
-                Start
-              </Button>
-            )}
+            {voiceEnabled &&
+              (running || busy ? (
+                <Button type="button" variant="outline" onClick={stop} disabled={stopping}>
+                  {stopping ? "Stopping…" : "Stop"}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void startLoop()
+                  }}
+                  disabled={!hasCharacters}
+                >
+                  Start
+                </Button>
+              ))}
             <Button type="submit" disabled={busy || running || !input.trim()}>
               Send
             </Button>

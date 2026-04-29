@@ -2,7 +2,7 @@
 
 # 0.1.0
 
-* When voice is disabled, instead of the Start/Stop button, there should be a "Next turn" button under the last message that just generates the next turn.
+* Fallback voice for male and female for each major browser. Is used when configured voice is not available.
 
 * After participation the player should be listed as being in the location. They can also leave the location again after that.
 
@@ -17,3 +17,4 @@
 
 * Refine "Add memory" form
 * Navigating to previous instances (currently only via browser history or direct URL)
+* "Hide locations" / "Show locations" button position? (it's far away from the locations sidebar)
