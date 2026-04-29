@@ -6,8 +6,12 @@ import type { Scenario } from "./scenarios"
 
 const logger = getLogger({ component: "transcript-summary" })
 
-export const RECENT_TRANSCRIPT_LIMIT = 10
-export const TRANSCRIPT_SUMMARY_TRIGGER = 20
+/** Keep at least this many characters of the most recent transcript verbatim. */
+export const RECENT_TRANSCRIPT_CHARS = 4000
+/** Total transcript size at which summarization first kicks in. */
+export const TRANSCRIPT_SUMMARY_TRIGGER_CHARS = 8000
+/** Re-summarize once this many new characters have accumulated past the cached boundary. */
+export const SUMMARY_FOLD_INCREMENT_CHARS = RECENT_TRANSCRIPT_CHARS
 
 function formatMessageLine(m: Message): string {
   if (m.speakerKind === "narrator") return `${m.speakerName || "Narrator"}: ${m.content}`
@@ -15,15 +19,36 @@ function formatMessageLine(m: Message): string {
   return `${m.speakerName}: ${m.content}`
 }
 
-export function recentMessages(messages: Message[]): Message[] {
-  return messages.slice(-RECENT_TRANSCRIPT_LIMIT)
+function lineLength(m: Message): number {
+  return formatMessageLine(m).length + 1 // +1 for joining newline
+}
+
+function totalChars(messages: Message[]): number {
+  let total = 0
+  for (const m of messages) total += lineLength(m)
+  return total
 }
 
 /**
- * Returns the running summary covering everything before the last
- * RECENT_TRANSCRIPT_LIMIT messages. Incrementally folds new older messages
- * into the cached summary so the LLM only ever sees the previous summary
- * plus the messages newly pushed out of the recent window.
+ * Index of the first message that belongs in the recent (verbatim) window.
+ * Walks from the end accumulating characters; everything from the returned
+ * index onward stays verbatim, everything before it is eligible for summarization.
+ */
+function recentBoundaryIndex(messages: Message[]): number {
+  let acc = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    acc += lineLength(messages[i])
+    if (acc >= RECENT_TRANSCRIPT_CHARS) return i
+  }
+  return 0
+}
+
+/**
+ * Returns the running summary covering everything before the recent
+ * verbatim window (sized by character count, see RECENT_TRANSCRIPT_CHARS).
+ * Incrementally folds new older messages into the cached summary so the LLM
+ * only ever sees the previous summary plus the messages newly pushed out of
+ * the recent window.
  */
 export async function ensureTranscriptSummary(args: {
   backend: LLMBackend
@@ -34,26 +59,30 @@ export async function ensureTranscriptSummary(args: {
   onStart?: () => void
 }): Promise<string> {
   const { backend, scenario, instance, messages, signal, onStart } = args
-  if (messages.length < TRANSCRIPT_SUMMARY_TRIGGER) return instance.transcriptSummary
-  const olderCount = messages.length - RECENT_TRANSCRIPT_LIMIT
 
   const cachedSummary = instance.transcriptSummary
   const cachedCount = instance.transcriptSummaryCount
-  if (olderCount - cachedCount < RECENT_TRANSCRIPT_LIMIT) {
+
+  if (totalChars(messages) < TRANSCRIPT_SUMMARY_TRIGGER_CHARS) return cachedSummary
+
+  const olderCount = recentBoundaryIndex(messages)
+  if (olderCount <= cachedCount) return cachedSummary
+
+  const newMessages = messages.slice(cachedCount, olderCount)
+  const newChars = totalChars(newMessages)
+  if (newChars < SUMMARY_FOLD_INCREMENT_CHARS) {
     logger.info(
       {
         scenarioId: scenario.id,
         coveredCount: cachedCount,
         totalMessages: messages.length,
+        newChars,
         summary: cachedSummary,
       },
       "transcript summary (cached)",
     )
     return cachedSummary
   }
-
-  const newMessages = messages.slice(cachedCount, olderCount)
-  if (newMessages.length === 0) return cachedSummary
 
   const transcript = newMessages.map(formatMessageLine).join("\n")
   const previousBlock = cachedSummary
@@ -86,6 +115,7 @@ export async function ensureTranscriptSummary(args: {
       previousCount: cachedCount,
       coveredCount: olderCount,
       foldedInCount: newMessages.length,
+      foldedInChars: newChars,
       totalMessages: messages.length,
       previousSummary: cachedSummary,
       summary,
