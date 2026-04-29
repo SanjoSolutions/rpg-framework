@@ -175,6 +175,11 @@ async function buildTarget(target, blobPath) {
     readmeFor(target, cfg),
     "utf8",
   )
+  await writeFile(
+    join(outDir, ".itch.toml"),
+    itchManifestFor(cfg),
+    "utf8",
+  )
   console.log(`> ${target} done -> ${outDir}`)
 }
 
@@ -376,4 +381,13 @@ function readmeFor(target, cfg) {
     )
   }
   return lines.join("\n") + "\n"
+}
+
+function itchManifestFor(cfg) {
+  return [
+    `[[actions]]`,
+    `name = "play"`,
+    `path = "${cfg.exeName}"`,
+    ``,
+  ].join("\n")
 }
