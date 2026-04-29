@@ -2,28 +2,15 @@
 
 import { ChevronRight } from "lucide-react"
 import { useState } from "react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { LlmBackendCard } from "@/components/llm-backend-card"
+import { TtsBackendCard } from "@/components/tts-backend-card"
 import { Switch } from "@/components/ui/switch"
 import { WebhooksManager } from "@/components/webhooks-manager"
 import { useSettings } from "@/hooks/use-settings"
-import { LlmBackendSettings } from "@/lib/llm/settings-ui"
-import { LLM_BACKEND_LABELS, LLM_BACKENDS, type LLMBackend } from "@/lib/llm/types"
-import { TtsBackendSettings } from "@/lib/tts/settings-ui"
-import { TTS_BACKEND_LABELS, TTS_BACKENDS, type TtsBackend } from "@/lib/tts/types"
 
 export default function SettingsPage() {
   const {
     loaded,
-    llmBackend,
-    setLlmBackend,
-    ttsBackend,
-    setTtsBackend,
     requireConsent,
     setRequireConsent,
     memoriesEnabled,
@@ -39,62 +26,8 @@ export default function SettingsPage() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Backends</h2>
-        <div className="rounded-xl border border-border p-5 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="font-medium">LLM backend</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Which language-model strategy drives generation. Cloud backends require their
-                respective API key; local backends require a running OpenAI-compatible server.
-              </p>
-            </div>
-            <Select
-              disabled={!loaded}
-              value={llmBackend}
-              onValueChange={(value) => setLlmBackend(value as LLMBackend)}
-            >
-              <SelectTrigger className="w-64" aria-label="LLM backend">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LLM_BACKENDS.map((backend) => (
-                  <SelectItem key={backend} value={backend}>
-                    {LLM_BACKEND_LABELS[backend]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <LlmBackendSettings backend={llmBackend} />
-        </div>
-        <div className="rounded-xl border border-border p-5 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="font-medium">TTS backend</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Which text-to-speech strategy synthesises character voices. Audio is cached on disk
-                keyed by voice id and text hash.
-              </p>
-            </div>
-            <Select
-              disabled={!loaded}
-              value={ttsBackend}
-              onValueChange={(value) => setTtsBackend(value as TtsBackend)}
-            >
-              <SelectTrigger className="w-64" aria-label="TTS backend">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TTS_BACKENDS.map((backend) => (
-                  <SelectItem key={backend} value={backend}>
-                    {TTS_BACKEND_LABELS[backend]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <TtsBackendSettings backend={ttsBackend} />
-        </div>
+        <LlmBackendCard />
+        <TtsBackendCard />
       </section>
 
       <section className="space-y-4">

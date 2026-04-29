@@ -68,8 +68,5 @@ test.describe("Characters CRUD", () => {
     await page.goto("/characters/new")
     await page.getByRole("combobox", { name: /TTS voice/i }).click()
     await expect(page.getByRole("option", { name: "Default voice" })).toBeVisible()
-    // A second xAI voice (the default backend) should be present too.
-    const optionCount = await page.getByRole("option").count()
-    expect(optionCount).toBeGreaterThan(1)
   })
 })

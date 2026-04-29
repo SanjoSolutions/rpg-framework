@@ -1,19 +1,41 @@
 import { expect, test, type Page } from "@playwright/test"
+import { startMockOllama, type MockOllama } from "./mock-ollama"
 
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434"
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "nemomix-unleashed-12b:latest"
+const USE_MOCK = process.env.MOCK_OLLAMA !== "0"
+let OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434"
+let OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "nemomix-unleashed-12b:latest"
+let mock: MockOllama | undefined
+
+test.beforeAll(async () => {
+  if (!USE_MOCK) return
+  mock = await startMockOllama()
+  OLLAMA_URL = mock.url
+  OLLAMA_MODEL = mock.model
+})
+
+test.afterAll(async () => {
+  if (mock) await mock.close()
+})
 
 async function configureOllamaThroughUI(page: Page) {
   await page.goto("/settings")
 
-  // Pick the Ollama LLM backend.
+  // Pick the Ollama LLM backend. Clicking the option only fires a PUT when
+  // the value actually changes — so we inspect the option's aria-selected
+  // state and only wait for the response when we're switching backend.
   await page.getByRole("combobox", { name: "LLM backend" }).click()
-  await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "PUT",
-    ),
-    page.getByRole("option", { name: /ollama/i }).click(),
-  ])
+  const ollamaOption = page.getByRole("option", { name: /ollama/i })
+  const alreadySelected = (await ollamaOption.getAttribute("aria-selected")) === "true"
+  if (alreadySelected) {
+    await ollamaOption.click()
+  } else {
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes("/api/settings") && r.request().method() === "PUT",
+      ),
+      ollamaOption.click(),
+    ])
+  }
 
   // Fill the model name. The component autosaves on every onChange, so we
   // wait for the last persistence call to settle before moving on.
@@ -47,6 +69,7 @@ async function configureOllamaThroughUI(page: Page) {
 }
 
 async function probeOllama(): Promise<boolean> {
+  if (USE_MOCK) return true
   try {
     const res = await fetch(`${OLLAMA_URL}/api/tags`)
     if (!res.ok) return false
@@ -89,8 +112,11 @@ async function createScenario(page: Page, opts: {
 }
 
 test.describe("Turn streaming against the running Ollama server", () => {
-  // 12B model on a local box can take 30–60s for one turn; give plenty of headroom.
-  test.setTimeout(180_000)
+  // Real 12B model on a local box can take 30–60s for one turn; the mock
+  // replies in a couple of seconds. Pick test/poll budgets accordingly.
+  const REPLY_TIMEOUT = USE_MOCK ? 15_000 : 150_000
+  const FINISH_TIMEOUT = USE_MOCK ? 10_000 : 60_000
+  test.setTimeout(USE_MOCK ? 30_000 : 180_000)
 
   test("user message triggers a streamed character reply", async ({ page }) => {
     test.skip(!(await probeOllama()), `Ollama is unreachable at ${OLLAMA_URL} or model "${OLLAMA_MODEL}" is missing — skipping.`)
@@ -150,7 +176,7 @@ test.describe("Turn streaming against the running Ollama server", () => {
     await expect
       .poll(async () => bodyBlocks.count(), {
         message: "expected the model to emit a streamed reply bubble within the timeout",
-        timeout: 150_000,
+        timeout: REPLY_TIMEOUT,
         intervals: [500, 1000, 2000, 4000],
       })
       .toBeGreaterThan(1)
@@ -165,7 +191,7 @@ test.describe("Turn streaming against the running Ollama server", () => {
         },
         {
           message: "expected the streamed reply to contain readable content",
-          timeout: 150_000,
+          timeout: REPLY_TIMEOUT,
           intervals: [1000, 2000, 4000],
         },
       )
@@ -173,7 +199,7 @@ test.describe("Turn streaming against the running Ollama server", () => {
 
     // Once the stream is done, the Clear button (which is disabled while busy)
     // becomes enabled — that's the cleanest signal that the turn finished.
-    await expect(page.getByRole("button", { name: "Clear" })).toBeEnabled({ timeout: 60_000 })
+    await expect(page.getByRole("button", { name: "Clear" })).toBeEnabled({ timeout: FINISH_TIMEOUT })
 
     // Typing a new message re-enables the Send button.
     await input.fill("Anything else?")

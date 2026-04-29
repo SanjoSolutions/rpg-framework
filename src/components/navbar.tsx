@@ -1,9 +1,10 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
+import { useSettings } from "@/hooks/use-settings"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useSettings } from "@/hooks/use-settings"
 
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/characters", label: "Characters" },
@@ -15,7 +16,7 @@ const NAV_ITEMS: { href: string; label: string }[] = [
 
 export function Navbar() {
   const pathname = usePathname()
-  const { memoriesEnabled } = useSettings()
+  const { memoriesEnabled, llmConfigured, loaded } = useSettings()
   const items = NAV_ITEMS.filter(
     (item) => item.href !== "/memories" || memoriesEnabled,
   )
@@ -41,6 +42,11 @@ export function Navbar() {
               </Link>
             )
           })}
+          {loaded && !llmConfigured && (
+            <Button asChild size="sm">
+              <Link href="/setup">Set up</Link>
+            </Button>
+          )}
         </nav>
       </div>
     </header>

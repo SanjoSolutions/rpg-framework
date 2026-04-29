@@ -34,7 +34,7 @@ export function CharacterForm({ mode, character }: Props) {
   const [voice, setVoice] = useState(character?.voice ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const browserVoices = useBrowserVoices(ttsBackend === "chrome")
+  const browserVoices = useBrowserVoices(ttsBackend === "browser")
 
   const nameRef = useRef<HTMLInputElement>(null)
   const appearanceRef = useRef<HTMLTextAreaElement>(null)
@@ -43,7 +43,7 @@ export function CharacterForm({ mode, character }: Props) {
   const getEntity = () => ({ name, appearance, description, voice })
 
   const voiceOptions: string[] =
-    ttsBackend === "chrome" ? browserVoices : [...XAI_VOICES]
+    ttsBackend === "browser" ? browserVoices : [...XAI_VOICES]
   const voiceSelectValue = voice && voiceOptions.includes(voice) ? voice : NO_VOICE
 
   async function onSubmit(event: React.FormEvent) {
@@ -172,7 +172,7 @@ export function CharacterForm({ mode, character }: Props) {
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          {ttsBackend === "chrome"
+          {ttsBackend === "browser"
             ? "Voice from your browser's SpeechSynthesis available in this device."
             : "xAI voice id used when reading this character's lines aloud."}
         </p>

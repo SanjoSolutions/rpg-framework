@@ -6,7 +6,7 @@ import type { TtsBackend } from "./types"
 
 const REGISTRY: Record<TtsBackend, ComponentType | null> = {
   xai: XaiTtsSettings,
-  chrome: null,
+  browser: null,
 }
 
 export function TtsBackendSettings({ backend }: { backend: TtsBackend }) {

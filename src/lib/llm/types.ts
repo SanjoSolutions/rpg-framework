@@ -7,7 +7,7 @@ export type LLMBackend = (typeof LLM_BACKENDS)[number]
 
 export const LLM_BACKEND_LABELS: Record<LLMBackend, string> = {
   grok: "xAI Grok (cloud)",
-  ollama: "Ollama (local)",
+  ollama: "Ollama",
 }
 
 export interface ChatMessage {

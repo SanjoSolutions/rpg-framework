@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { chromeTtsStrategy } from "./chrome/strategy"
+import { browserTtsStrategy } from "./browser/strategy"
 import { xaiTtsStrategy } from "./xai/strategy"
 import type { TtsBackend, TtsStrategy, TtsSynthesizeArgs } from "./types"
 
@@ -12,7 +12,7 @@ const DEFAULT_BACKEND: TtsBackend = "xai"
 
 const STRATEGIES: Record<TtsBackend, TtsStrategy> = {
   xai: xaiTtsStrategy,
-  chrome: chromeTtsStrategy,
+  browser: browserTtsStrategy,
 }
 
 export function getTtsStrategy(backend: TtsBackend = DEFAULT_BACKEND): TtsStrategy {

@@ -1,12 +1,12 @@
-export const TTS_BACKENDS = ["xai", "chrome"] as const
+export const TTS_BACKENDS = ["xai", "browser"] as const
 export type TtsBackend = (typeof TTS_BACKENDS)[number]
 
 export const TTS_BACKEND_LABELS: Record<TtsBackend, string> = {
   xai: "xAI TTS (cloud)",
-  chrome: "Chrome TTS (browser SpeechSynthesis)",
+  browser: "Browser TTS (SpeechSynthesis)",
 }
 
-export const BROWSER_TTS_BACKENDS: readonly TtsBackend[] = ["chrome"]
+export const BROWSER_TTS_BACKENDS: readonly TtsBackend[] = ["browser"]
 
 export function isBrowserTtsBackend(backend: TtsBackend): boolean {
   return BROWSER_TTS_BACKENDS.includes(backend)

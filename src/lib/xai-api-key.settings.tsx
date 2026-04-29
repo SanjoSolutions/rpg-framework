@@ -1,28 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
+import { useSettings } from "@/hooks/use-settings"
 
 export function XaiApiKeyField() {
-  const [loaded, setLoaded] = useState(false)
-  const [value, setValue] = useState("")
-
-  useEffect(() => {
-    let cancelled = false
-    fetch("/api/settings")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        if (typeof data.xaiApiKey === "string") setValue(data.xaiApiKey)
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { loaded, settings, updateSettings } = useSettings()
 
   return (
     <div className="flex items-start justify-between gap-4">
@@ -39,15 +21,8 @@ export function XaiApiKeyField() {
         spellCheck={false}
         className="w-64"
         disabled={!loaded}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          fetch("/api/settings", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ xaiApiKey: event.target.value }),
-          }).catch(() => {})
-        }}
+        value={settings.xaiApiKey}
+        onChange={(event) => updateSettings({ xaiApiKey: event.target.value })}
         placeholder="xai-..."
         aria-label="xAI API key"
       />

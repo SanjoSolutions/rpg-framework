@@ -1,28 +1,9 @@
 import { getDb } from "./db"
 import { LLM_BACKENDS, type LLMBackend } from "./llm/types"
+import { DEFAULT_SETTINGS, type AppSettings } from "./settings-types"
 import { TTS_BACKENDS, type TtsBackend } from "./tts/types"
 
-export interface AppSettings {
-  llmBackend: LLMBackend
-  ttsBackend: TtsBackend
-  xaiApiKey: string
-  ollamaUrl: string
-  ollamaModel: string
-  requireConsent: boolean
-  memoriesEnabled: boolean
-  learnNames: boolean
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  llmBackend: "grok",
-  ttsBackend: "xai",
-  xaiApiKey: "",
-  ollamaUrl: "http://localhost:11434",
-  ollamaModel: "",
-  requireConsent: false,
-  memoriesEnabled: false,
-  learnNames: false,
-}
+export { DEFAULT_SETTINGS, type AppSettings }
 
 function parseLlmBackend(value: string | undefined): LLMBackend {
   if (value === "nemomix-local") return "ollama"
@@ -32,6 +13,7 @@ function parseLlmBackend(value: string | undefined): LLMBackend {
 }
 
 function parseTtsBackend(value: string | undefined): TtsBackend {
+  if (value === "chrome") return "browser"
   return TTS_BACKENDS.includes(value as TtsBackend)
     ? (value as TtsBackend)
     : DEFAULT_SETTINGS.ttsBackend

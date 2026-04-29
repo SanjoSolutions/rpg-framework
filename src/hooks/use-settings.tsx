@@ -5,11 +5,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react"
+import { isLlmBackendConfigured } from "@/lib/llm/configured"
 import { LLM_BACKENDS, type LLMBackend } from "@/lib/llm/types"
+import { DEFAULT_SETTINGS, type AppSettings } from "@/lib/settings-types"
 import { TTS_BACKENDS, type TtsBackend } from "@/lib/tts/types"
 
 const VOICE_KEY = "rpg-voice-enabled"
@@ -39,6 +42,8 @@ function readVoiceServer(): boolean {
 
 interface SettingsState {
   loaded: boolean
+  settings: AppSettings
+  updateSettings: (patch: Partial<AppSettings>) => void
   llmBackend: LLMBackend
   setLlmBackend: (value: LLMBackend) => void
   ttsBackend: TtsBackend
@@ -51,17 +56,14 @@ interface SettingsState {
   setLearnNames: (value: boolean) => void
   voiceEnabled: boolean
   setVoiceEnabled: (value: boolean) => void
+  llmConfigured: boolean
 }
 
 const SettingsContext = createContext<SettingsState | null>(null)
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
-  const [llmBackend, setLlmBackendState] = useState<LLMBackend>("grok")
-  const [ttsBackend, setTtsBackendState] = useState<TtsBackend>("xai")
-  const [requireConsent, setRequireConsentState] = useState(false)
-  const [memoriesEnabled, setMemoriesEnabledState] = useState(false)
-  const [learnNames, setLearnNamesState] = useState(false)
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const voiceEnabled = useSyncExternalStore(subscribeVoice, readVoice, readVoiceServer)
 
   useEffect(() => {
@@ -69,12 +71,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     fetch("/api/settings")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled) return
-        if (data && LLM_BACKENDS.includes(data.llmBackend)) setLlmBackendState(data.llmBackend)
-        if (data && TTS_BACKENDS.includes(data.ttsBackend)) setTtsBackendState(data.ttsBackend)
-        if (data && typeof data.requireConsent === "boolean") setRequireConsentState(data.requireConsent)
-        if (data && typeof data.memoriesEnabled === "boolean") setMemoriesEnabledState(data.memoriesEnabled)
-        if (data && typeof data.learnNames === "boolean") setLearnNamesState(data.learnNames)
+        if (cancelled || !data) return
+        setSettings((prev) => {
+          const next: AppSettings = { ...prev }
+          if (LLM_BACKENDS.includes(data.llmBackend)) next.llmBackend = data.llmBackend
+          if (TTS_BACKENDS.includes(data.ttsBackend)) next.ttsBackend = data.ttsBackend
+          if (typeof data.xaiApiKey === "string") next.xaiApiKey = data.xaiApiKey
+          if (typeof data.ollamaUrl === "string") next.ollamaUrl = data.ollamaUrl
+          if (typeof data.ollamaModel === "string") next.ollamaModel = data.ollamaModel
+          if (typeof data.requireConsent === "boolean") next.requireConsent = data.requireConsent
+          if (typeof data.memoriesEnabled === "boolean") next.memoriesEnabled = data.memoriesEnabled
+          if (typeof data.learnNames === "boolean") next.learnNames = data.learnNames
+          return next
+        })
       })
       .catch(() => {})
       .finally(() => {
@@ -85,50 +94,35 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setLlmBackend = useCallback((value: LLMBackend) => {
-    setLlmBackendState(value)
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }))
     fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ llmBackend: value }),
+      body: JSON.stringify(patch),
     }).catch(() => {})
   }, [])
 
-  const setTtsBackend = useCallback((value: TtsBackend) => {
-    setTtsBackendState(value)
-    fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ttsBackend: value }),
-    }).catch(() => {})
-  }, [])
-
-  const setRequireConsent = useCallback((value: boolean) => {
-    setRequireConsentState(value)
-    fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requireConsent: value }),
-    }).catch(() => {})
-  }, [])
-
-  const setMemoriesEnabled = useCallback((value: boolean) => {
-    setMemoriesEnabledState(value)
-    fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memoriesEnabled: value }),
-    }).catch(() => {})
-  }, [])
-
-  const setLearnNames = useCallback((value: boolean) => {
-    setLearnNamesState(value)
-    fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ learnNames: value }),
-    }).catch(() => {})
-  }, [])
+  const setLlmBackend = useCallback(
+    (value: LLMBackend) => updateSettings({ llmBackend: value }),
+    [updateSettings],
+  )
+  const setTtsBackend = useCallback(
+    (value: TtsBackend) => updateSettings({ ttsBackend: value }),
+    [updateSettings],
+  )
+  const setRequireConsent = useCallback(
+    (value: boolean) => updateSettings({ requireConsent: value }),
+    [updateSettings],
+  )
+  const setMemoriesEnabled = useCallback(
+    (value: boolean) => updateSettings({ memoriesEnabled: value }),
+    [updateSettings],
+  )
+  const setLearnNames = useCallback(
+    (value: boolean) => updateSettings({ learnNames: value }),
+    [updateSettings],
+  )
 
   const setVoiceEnabled = useCallback((value: boolean) => {
     try {
@@ -139,22 +133,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const llmConfigured = useMemo(
+    () => loaded && isLlmBackendConfigured(settings),
+    [loaded, settings],
+  )
+
   return (
     <SettingsContext.Provider
       value={{
         loaded,
-        llmBackend,
+        settings,
+        updateSettings,
+        llmBackend: settings.llmBackend,
         setLlmBackend,
-        ttsBackend,
+        ttsBackend: settings.ttsBackend,
         setTtsBackend,
-        requireConsent,
+        requireConsent: settings.requireConsent,
         setRequireConsent,
-        memoriesEnabled,
+        memoriesEnabled: settings.memoriesEnabled,
         setMemoriesEnabled,
-        learnNames,
+        learnNames: settings.learnNames,
         setLearnNames,
         voiceEnabled,
         setVoiceEnabled,
+        llmConfigured,
       }}
     >
       {children}
