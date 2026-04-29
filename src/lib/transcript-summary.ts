@@ -1,7 +1,8 @@
+import { setInstanceTranscriptSummary, type ScenarioInstance } from "./instances"
 import { generateOnce, type LLMBackend } from "./llm"
 import { getLogger } from "./logger"
 import type { Message } from "./messages"
-import { setScenarioTranscriptSummary, type Scenario } from "./scenarios"
+import type { Scenario } from "./scenarios"
 
 const logger = getLogger({ component: "transcript-summary" })
 
@@ -27,16 +28,17 @@ export function recentMessages(messages: Message[]): Message[] {
 export async function ensureTranscriptSummary(args: {
   backend: LLMBackend
   scenario: Scenario
+  instance: ScenarioInstance
   messages: Message[]
   signal?: AbortSignal
   onStart?: () => void
 }): Promise<string> {
-  const { backend, scenario, messages, signal, onStart } = args
-  if (messages.length < TRANSCRIPT_SUMMARY_TRIGGER) return scenario.transcriptSummary
+  const { backend, scenario, instance, messages, signal, onStart } = args
+  if (messages.length < TRANSCRIPT_SUMMARY_TRIGGER) return instance.transcriptSummary
   const olderCount = messages.length - RECENT_TRANSCRIPT_LIMIT
 
-  const cachedSummary = scenario.transcriptSummary
-  const cachedCount = scenario.transcriptSummaryCount
+  const cachedSummary = instance.transcriptSummary
+  const cachedCount = instance.transcriptSummaryCount
   if (olderCount - cachedCount < RECENT_TRANSCRIPT_LIMIT) {
     logger.info(
       {
@@ -73,7 +75,9 @@ export async function ensureTranscriptSummary(args: {
   onStart?.()
   const text = await generateOnce({ backend, system, prompt, signal })
   const summary = text.trim()
-  setScenarioTranscriptSummary(scenario.id, summary, olderCount)
+  setInstanceTranscriptSummary(instance.id, summary, olderCount)
+  instance.transcriptSummary = summary
+  instance.transcriptSummaryCount = olderCount
   scenario.transcriptSummary = summary
   scenario.transcriptSummaryCount = olderCount
   logger.info(

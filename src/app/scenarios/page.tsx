@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { getLatestInstance } from "@/lib/instances"
 import { listLocations } from "@/lib/locations"
 import { listScenarios } from "@/lib/scenarios"
 
@@ -25,12 +26,16 @@ export default function ScenariosPage() {
         <ul className="space-y-3">
           {scenarios.map((s) => {
             const location = s.locationId ? locationsById.get(s.locationId) : null
+            const latestInstance = getLatestInstance(s.id)
+            const playHref = latestInstance
+              ? `/scenarios/${s.id}/${latestInstance.number}`
+              : `/scenarios/${s.id}`
             return (
               <li key={s.id} className="rounded-xl border border-border p-4 hover:bg-accent">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="font-semibold">
-                      <Link href={`/scenarios/${s.id}`} className="hover:underline">
+                      <Link href={playHref} className="hover:underline">
                         {s.name}
                       </Link>
                     </h2>
@@ -47,7 +52,7 @@ export default function ScenariosPage() {
                       <Link href={`/scenarios/${s.id}/edit`}>Edit</Link>
                     </Button>
                     <Button asChild size="sm">
-                      <Link href={`/scenarios/${s.id}`}>Play</Link>
+                      <Link href={playHref}>Play</Link>
                     </Button>
                   </div>
                 </div>

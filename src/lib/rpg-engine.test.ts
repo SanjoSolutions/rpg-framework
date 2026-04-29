@@ -62,6 +62,7 @@ describe("pickNextSpeaker", () => {
     const lastTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "character",
       speakerId: aria.id,
       speakerName: aria.name,
@@ -89,6 +90,7 @@ describe("pickNextSpeaker", () => {
     const lastTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "character",
       speakerId: aria.id,
       speakerName: aria.name,
@@ -116,6 +118,7 @@ describe("pickNextSpeaker", () => {
     const lastTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "character",
       speakerId: aria.id,
       speakerName: aria.name,
@@ -143,6 +146,7 @@ describe("pickNextSpeaker", () => {
     const directorTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "narrator",
       speakerId: null,
       speakerName: "Director",
@@ -169,6 +173,7 @@ describe("pickNextSpeaker", () => {
     const ariaTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "character",
       speakerId: aria.id,
       speakerName: aria.name,
@@ -179,6 +184,7 @@ describe("pickNextSpeaker", () => {
     const directorTurn: Message = {
       id: "m2",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "narrator",
       speakerId: null,
       speakerName: "Director",
@@ -204,6 +210,7 @@ describe("pickNextSpeaker", () => {
     const directorTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "narrator",
       speakerId: null,
       speakerName: "Director",
@@ -230,6 +237,7 @@ describe("pickNextSpeaker", () => {
     const lastTurn: Message = {
       id: "m1",
       scenarioId: "s1",
+      instanceId: "i1",
       speakerKind: "character",
       speakerId: vixxen.id,
       speakerName: vixxen.name,

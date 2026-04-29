@@ -7,6 +7,7 @@ export type MessageKind = "request" | "consent" | "fulfillment" | "move"
 export interface Message {
   id: string
   scenarioId: string
+  instanceId: string | null
   speakerKind: SpeakerKind
   speakerId: string | null
   speakerName: string
@@ -18,6 +19,7 @@ export interface Message {
 interface Row {
   id: string
   scenario_id: string
+  instance_id: string | null
   speaker_kind: SpeakerKind
   speaker_id: string | null
   speaker_name: string
@@ -38,6 +40,7 @@ function rowToMessage(row: Row): Message {
   return {
     id: row.id,
     scenarioId: row.scenario_id,
+    instanceId: row.instance_id,
     speakerKind: row.speaker_kind,
     speakerId: row.speaker_id,
     speakerName: row.speaker_name,
@@ -61,8 +64,16 @@ export function listMessages(scenarioId: string): Message[] {
   return rows.map(rowToMessage)
 }
 
+export function listInstanceMessages(instanceId: string): Message[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM messages WHERE instance_id = ? ORDER BY created_at, id")
+    .all(instanceId) as Row[]
+  return rows.map(rowToMessage)
+}
+
 export interface MessageInput {
   scenarioId: string
+  instanceId: string
   speakerKind: SpeakerKind
   speakerId?: string | null
   speakerName: string
@@ -74,6 +85,7 @@ export function appendMessage(input: MessageInput): Message {
   const message: Message = {
     id: randomUUID(),
     scenarioId: input.scenarioId,
+    instanceId: input.instanceId,
     speakerKind: input.speakerKind,
     speakerId: input.speakerId ?? null,
     speakerName: input.speakerName,
@@ -83,11 +95,12 @@ export function appendMessage(input: MessageInput): Message {
   }
   getDb()
     .prepare(
-      "INSERT INTO messages (id, scenario_id, speaker_kind, speaker_id, speaker_name, content, kind, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO messages (id, scenario_id, instance_id, speaker_kind, speaker_id, speaker_name, content, kind, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       message.id,
       message.scenarioId,
+      message.instanceId,
       message.speakerKind,
       message.speakerId,
       message.speakerName,
@@ -101,23 +114,15 @@ export function appendMessage(input: MessageInput): Message {
 export function deleteMessage(id: string): boolean {
   const db = getDb()
   const row = db
-    .prepare("SELECT scenario_id FROM messages WHERE id = ?")
-    .get(id) as { scenario_id: string } | undefined
+    .prepare("SELECT instance_id FROM messages WHERE id = ?")
+    .get(id) as { instance_id: string | null } | undefined
   const result = db.prepare("DELETE FROM messages WHERE id = ?").run(id)
-  if (result.changes > 0 && row) {
+  if (result.changes > 0 && row?.instance_id) {
     db.prepare(
-      "UPDATE scenarios SET transcript_summary = '', transcript_summary_count = 0 WHERE id = ?",
-    ).run(row.scenario_id)
+      "UPDATE scenario_instances SET transcript_summary = '', transcript_summary_count = 0 WHERE id = ?",
+    ).run(row.instance_id)
   }
   return result.changes > 0
-}
-
-export function clearScenarioMessages(scenarioId: string): void {
-  const db = getDb()
-  db.prepare("DELETE FROM messages WHERE scenario_id = ?").run(scenarioId)
-  db.prepare(
-    "UPDATE scenarios SET transcript_summary = '', transcript_summary_count = 0 WHERE id = ?",
-  ).run(scenarioId)
 }
 
 export interface ConsentEventMeta {
@@ -182,12 +187,12 @@ export function setMessageMeta(messageId: string, meta: MessageMeta): void {
     )
 }
 
-export function listMessageMetaForScenario(scenarioId: string): Record<string, MessageMeta> {
+export function listMessageMetaForInstance(instanceId: string): Record<string, MessageMeta> {
   const rows = getDb()
     .prepare(
-      "SELECT mm.* FROM message_meta mm JOIN messages m ON m.id = mm.message_id WHERE m.scenario_id = ?",
+      "SELECT mm.* FROM message_meta mm JOIN messages m ON m.id = mm.message_id WHERE m.instance_id = ?",
     )
-    .all(scenarioId) as MetaRow[]
+    .all(instanceId) as MetaRow[]
   const out: Record<string, MessageMeta> = {}
   for (const r of rows) out[r.message_id] = rowToMeta(r)
   return out

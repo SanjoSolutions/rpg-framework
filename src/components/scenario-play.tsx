@@ -13,7 +13,7 @@ import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import { XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 interface SpeakerInfo {
@@ -42,6 +42,7 @@ interface AttemptUI {
 
 interface Props {
   scenarioId: string
+  instanceNumber: number
   initialMessages: Message[]
   initialMessageMeta?: Record<string, MessageMeta>
   characters: Character[]
@@ -74,6 +75,7 @@ function seedMessageConsents(
 
 export function ScenarioPlay({
   scenarioId,
+  instanceNumber,
   initialMessages,
   initialMessageMeta,
   characters,
@@ -82,6 +84,8 @@ export function ScenarioPlay({
   initialCharacterLocations,
   initialActivationRequired = false,
 }: Props) {
+  const router = useRouter()
+  const apiBase = `/api/scenarios/${scenarioId}/${instanceNumber}`
   const { voiceEnabled, setVoiceEnabled, ttsBackend, memoriesEnabled } = useSettings()
   const useBrowserTts = isBrowserTtsBackend(ttsBackend)
   const { showRawMessages, showMemories: showMemoriesPref, showRequestInternals } = useDevSidebar()
@@ -92,9 +96,7 @@ export function ScenarioPlay({
   const [input, setInput] = useState("")
   const [messageRole, setMessageRole] = useState<"director" | "participant">("director")
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null)
-  const [messageConsents, setMessageConsents] = useState<Record<string, AttemptUI[]>>(() =>
-    seedMessageConsents(initialMessageMeta),
-  )
+  const messageConsents = seedMessageConsents(initialMessageMeta)
   const [busy, setBusy] = useState(false)
   const [running, setRunning] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -148,7 +150,7 @@ export function ScenarioPlay({
   async function switchActiveScene(locationId: string | null) {
     setActiveLocationId(locationId)
     try {
-      await fetch(`/api/scenarios/${scenarioId}/move`, {
+      await fetch(`${apiBase}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId: null, locationId, setActive: true }),
@@ -161,7 +163,7 @@ export function ScenarioPlay({
   async function moveCharacter(characterId: string, locationId: string | null) {
     setPlacement((current) => ({ ...current, [characterId]: locationId }))
     try {
-      await fetch(`/api/scenarios/${scenarioId}/move`, {
+      await fetch(`${apiBase}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, locationId }),
@@ -216,7 +218,7 @@ export function ScenarioPlay({
 
   const refreshSceneMemories = useCallback(async () => {
     try {
-      const res = await fetch(`/api/scenarios/${scenarioId}/memories`)
+      const res = await fetch(`${apiBase}/memories`)
       if (!res.ok) return
       const data = (await res.json()) as {
         byCharacter: { characterId: string; characterName: string; memories: Memory[] }[]
@@ -227,7 +229,7 @@ export function ScenarioPlay({
     } catch {
       // ignore
     }
-  }, [scenarioId])
+  }, [apiBase])
 
   useEffect(() => {
     if (showMemories) refreshSceneMemories()
@@ -302,7 +304,7 @@ export function ScenarioPlay({
       opts.onVisibleDone?.()
     }
     try {
-      const res = await fetch(`/api/scenarios/${scenarioId}/turn`, {
+      const res = await fetch(`${apiBase}/turn`, {
         method: "POST",
         signal: controller.signal,
       })
@@ -477,7 +479,7 @@ export function ScenarioPlay({
     setError(null)
     setBusy(true)
     try {
-      const res = await fetch(`/api/scenarios/${scenarioId}/messages`, {
+      const res = await fetch(`${apiBase}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, role: messageRole }),
@@ -544,13 +546,11 @@ export function ScenarioPlay({
     setRunning(false)
   }
 
-  async function clearTranscript() {
-    if (!confirm("Clear all messages in this scenario?")) return
-    const res = await fetch(`/api/scenarios/${scenarioId}/messages`, { method: "DELETE" })
-    if (res.ok) {
-      setMessages([])
-      setMessageConsents({})
-    }
+  async function startNewInstance() {
+    const res = await fetch(`/api/scenarios/${scenarioId}/instances`, { method: "POST" })
+    if (!res.ok) return
+    const data = (await res.json()) as { instance: { number: number } }
+    router.push(`/scenarios/${scenarioId}/${data.instance.number}`)
   }
 
   return (
@@ -656,8 +656,8 @@ export function ScenarioPlay({
               <Switch checked={voiceEnabled} onCheckedChange={setVoiceEnabled} />
               Voice
             </label>
-            <Button type="button" variant="outline" size="sm" onClick={clearTranscript} disabled={busy}>
-              Clear
+            <Button type="button" variant="outline" size="sm" onClick={startNewInstance}>
+              New instance
             </Button>
             {attachedLocations.length > 0 && (
               <Button

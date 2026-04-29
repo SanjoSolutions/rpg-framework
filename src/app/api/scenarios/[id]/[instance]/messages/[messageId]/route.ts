@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 
 export async function GET(
   _request: NextRequest,
-  ctx: { params: Promise<{ id: string; messageId: string }> },
+  ctx: { params: Promise<{ id: string; instance: string; messageId: string }> },
 ) {
   const { id, messageId } = await ctx.params
   if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
@@ -20,7 +20,7 @@ export async function GET(
 
 export async function DELETE(
   _request: NextRequest,
-  ctx: { params: Promise<{ id: string; messageId: string }> },
+  ctx: { params: Promise<{ id: string; instance: string; messageId: string }> },
 ) {
   const { id, messageId } = await ctx.params
   if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })

@@ -169,6 +169,22 @@ export function createScenario(input: ScenarioInput): Scenario {
   ).run(id, input.name.trim(), (input.summary ?? "").trim(), locationId, now, now)
   setScenarioLocations(id, [...locationIds])
   setScenarioCharacters(id, characterIds, input.characterLocations, locationId)
+
+  const instanceId = randomUUID()
+  db.prepare(
+    `INSERT INTO scenario_instances (id, scenario_id, number, active_location_id, transcript_summary, transcript_summary_count, created_at)
+       VALUES (?, ?, 1, ?, '', 0, ?)`,
+  ).run(instanceId, id, locationId, now)
+  const insertChar = db.prepare(
+    "INSERT INTO instance_characters (instance_id, character_id, location_id) VALUES (?, ?, ?)",
+  )
+  for (const characterId of new Set(characterIds)) {
+    const placement =
+      input.characterLocations && Object.prototype.hasOwnProperty.call(input.characterLocations, characterId)
+        ? input.characterLocations[characterId]
+        : locationId
+    insertChar.run(instanceId, characterId, placement ?? null)
+  }
   return getScenario(id)!
 }
 

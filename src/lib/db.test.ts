@@ -18,7 +18,7 @@ beforeEach(async () => {
   const { getDb } = await import("./db")
   const db = getDb()
   db.exec(
-    "DELETE FROM memory_characters; DELETE FROM memories; DELETE FROM messages; DELETE FROM scenario_characters; DELETE FROM scenarios; DELETE FROM characters; DELETE FROM locations;",
+    "DELETE FROM memory_characters; DELETE FROM memories; DELETE FROM messages; DELETE FROM instance_characters; DELETE FROM scenario_instances; DELETE FROM scenario_characters; DELETE FROM scenarios; DELETE FROM characters; DELETE FROM locations;",
   )
 })
 
@@ -119,12 +119,15 @@ describe("scenarios repository", () => {
   it("cascades messages and links when a scenario is deleted", async () => {
     const { createCharacter } = await import("./characters")
     const { createScenario, deleteScenario } = await import("./scenarios")
+    const { getLatestInstance } = await import("./instances")
     const { appendMessage, listMessages } = await import("./messages")
 
     const c = createCharacter({ name: "Aria" })
     const s = createScenario({ name: "Scene", characterIds: [c.id] })
+    const instance = getLatestInstance(s.id)!
     appendMessage({
       scenarioId: s.id,
+      instanceId: instance.id,
       speakerKind: "user",
       speakerName: "You",
       content: "hi",
@@ -138,13 +141,22 @@ describe("scenarios repository", () => {
 
 describe("messages repository", () => {
   it("appends and lists messages in chronological order", async () => {
-    const { createScenario } = await import("./scenarios")
-    const { appendMessage, listMessages, clearScenarioMessages } = await import("./messages")
+    const { createScenario, deleteScenario } = await import("./scenarios")
+    const { getLatestInstance } = await import("./instances")
+    const { appendMessage, listMessages } = await import("./messages")
     const s = createScenario({ name: "Scene" })
+    const instance = getLatestInstance(s.id)!
 
-    appendMessage({ scenarioId: s.id, speakerKind: "user", speakerName: "You", content: "first" })
     appendMessage({
       scenarioId: s.id,
+      instanceId: instance.id,
+      speakerKind: "user",
+      speakerName: "You",
+      content: "first",
+    })
+    appendMessage({
+      scenarioId: s.id,
+      instanceId: instance.id,
       speakerKind: "narrator",
       speakerName: "Narrator",
       content: "second",
@@ -153,7 +165,7 @@ describe("messages repository", () => {
     const messages = listMessages(s.id)
     expect(messages.map((m) => m.content)).toEqual(["first", "second"])
 
-    clearScenarioMessages(s.id)
+    deleteScenario(s.id)
     expect(listMessages(s.id)).toHaveLength(0)
   })
 })

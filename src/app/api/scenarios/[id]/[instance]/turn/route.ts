@@ -15,7 +15,12 @@ import {
   renderMemoryContent,
   type Memory,
 } from "@/lib/memories"
-import { appendMessage, listMessages } from "@/lib/messages"
+import {
+  getInstanceByNumber,
+  projectScenarioForInstance,
+  setInstanceCharacterLocation,
+} from "@/lib/instances"
+import { appendMessage, listInstanceMessages } from "@/lib/messages"
 import { ensureTranscriptSummary } from "@/lib/transcript-summary"
 import {
   extractMemoriesFromTurn,
@@ -34,7 +39,7 @@ import {
   type PreviousAttempt,
   type SceneContext,
 } from "@/lib/rpg-engine"
-import { getScenario, setCharacterLocation, touchScenario } from "@/lib/scenarios"
+import { getScenario, touchScenario } from "@/lib/scenarios"
 import { getSettings } from "@/lib/settings"
 import { dispatchWebhook } from "@/lib/webhooks"
 import { getValidActivation } from "@/lib/activation"
@@ -45,10 +50,20 @@ const logger = getLogger({ component: "turn" })
 
 export const runtime = "nodejs"
 
-export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params
-  const scenario = getScenario(id)
-  if (!scenario) return new Response("Scenario not found", { status: 404 })
+export async function POST(
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string; instance: string }> },
+) {
+  const { id, instance: instanceParam } = await ctx.params
+  const template = getScenario(id)
+  if (!template) return new Response("Scenario not found", { status: 404 })
+
+  const number = Number(instanceParam)
+  const instance =
+    Number.isInteger(number) && number >= 1 ? getInstanceByNumber(id, number) : null
+  if (!instance) return new Response("Instance not found", { status: 404 })
+
+  const scenario = projectScenarioForInstance(template, instance)
 
   const activated = !!getValidActivation()
   if (!activated && getFreeTurnsUsed() >= FREE_TURN_LIMIT) {
@@ -85,7 +100,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   }
 
   const location = scenario.locationId ? getLocation(scenario.locationId) : null
-  const messages = listMessages(scenario.id)
+  const messages = listInstanceMessages(instance.id)
   const otherLocationIds = scenario.locationIds.filter((lid) => lid !== scenario.locationId)
   const otherLocations = otherLocationIds
     .map((lid) => getLocation(lid))
@@ -123,16 +138,26 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      let clientGone = false
       const send = (event: string, data: unknown) => {
+        if (clientGone) return
         const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
-        controller.enqueue(encoder.encode(payload))
+        try {
+          controller.enqueue(encoder.encode(payload))
+        } catch {
+          clientGone = true
+        }
       }
+      request.signal.addEventListener("abort", () => {
+        clientGone = true
+      })
 
       const transcriptSummary = await ensureTranscriptSummary({
         backend,
         scenario,
+        instance,
         messages,
-        signal: request.signal,
+        // no signal: server completes the turn even if the client navigates away
         onStart: () => send("summarizing", {}),
       })
 
@@ -142,7 +167,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         context,
         messages,
         summary: transcriptSummary,
-        signal: request.signal,
+        // no signal: server completes the turn even if the client navigates away
       })
 
       const streamOneTurn = async (args: {
@@ -169,7 +194,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           memories: args.memories,
           knowledge: args.speakerId ? knowledgeFor(args.speakerId) : undefined,
           summary: transcriptSummary,
-          signal: request.signal,
+          // no signal: server completes the turn even if the client navigates away
           onText: (chunk) => {
             buffered += chunk
             const visible = stripper.push(chunk)
@@ -182,6 +207,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         if (trimmed.length > 0) {
           const message = appendMessage({
             scenarioId: scenario.id,
+            instanceId: instance.id,
             speakerKind: args.speakerKind,
             speakerId: args.speakerId,
             speakerName: args.speakerName,
@@ -233,7 +259,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 knowledge: knowledgeFor(speakerCharacter.id),
                 previousAttempts,
                 summary: transcriptSummary,
-                signal: request.signal,
+                // no signal: server completes the turn even if the client navigates away
               })
               intent = proposal.intent
               send("intent", {
@@ -259,6 +285,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
               if (isRequestConsent) {
                 const intentMessage = appendMessage({
                   scenarioId: scenario.id,
+            instanceId: instance.id,
                   speakerKind: "character",
                   speakerId: speaker.characterId,
                   speakerName: speaker.name,
@@ -293,7 +320,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     intent: proposal.intent,
                     knowledge: knowledgeFor(target.id),
                     summary: transcriptSummary,
-                    signal: request.signal,
+                    // no signal: server completes the turn even if the client navigates away
                   })
                   send("consent_response", { ...decision, attempt })
 
@@ -301,6 +328,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     const verb = decision.decision === "yes" ? "Consented" : "Refused"
                     const consentMessage = appendMessage({
                       scenarioId: scenario.id,
+            instanceId: instance.id,
                       speakerKind: "character",
                       speakerId: target.id,
                       speakerName: target.name,
@@ -334,7 +362,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     speaker: speakerCharacter,
                     intent: proposal.intent,
                     consentedTargetIds,
-                    signal: request.signal,
+                    // no signal: server completes the turn even if the client navigates away
                   })
                   shouldStreamReply = false
                   for (const fulfillerId of order) {
@@ -349,11 +377,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                       intent: proposal.intent,
                       knowledge: knowledgeFor(fulfiller.id),
                       summary: transcriptSummary,
-                      signal: request.signal,
+                      // no signal: server completes the turn even if the client navigates away
                     })
                     if (!text) continue
                     const fulfillmentMessage = appendMessage({
                       scenarioId: scenario.id,
+            instanceId: instance.id,
                       speakerKind: "character",
                       speakerId: fulfiller.id,
                       speakerName: fulfiller.name,
@@ -388,6 +417,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                 const destination = moveDestination
                 const moveMessage = appendMessage({
                   scenarioId: scenario.id,
+            instanceId: instance.id,
                   speakerKind: "character",
                   speakerId: speaker.characterId,
                   speakerName: speaker.name,
@@ -421,7 +451,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     destinationName: destination.name,
                     knowledge: knowledgeFor(companion.id),
                     summary: transcriptSummary,
-                    signal: request.signal,
+                    // no signal: server completes the turn even if the client navigates away
                   })
                   send("consent_response", { ...decision, attempt })
 
@@ -429,6 +459,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     const verb = decision.decision === "yes" ? "Consented" : "Refused"
                     const consentMessage = appendMessage({
                       scenarioId: scenario.id,
+            instanceId: instance.id,
                       speakerKind: "character",
                       speakerId: companion.id,
                       speakerName: companion.name,
@@ -446,7 +477,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
                 const speakerId = speaker.characterId
                 if (speakerId) {
-                  setCharacterLocation(scenario.id, speakerId, destination.id)
+                  setInstanceCharacterLocation(instance.id, speakerId, destination.id)
                   send("character_moved", {
                     characterId: speakerId,
                     characterName: speaker.name,
@@ -456,13 +487,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   })
                   dispatchWebhook("scenario.character_moved", {
                     scenarioId: scenario.id,
+            instanceId: instance.id,
                     characterId: speakerId,
                     locationId: destination.id,
                   })
                 }
                 for (const companionId of consentingCompanionIds) {
                   const companion = characters.find((c) => c.id === companionId)
-                  setCharacterLocation(scenario.id, companionId, destination.id)
+                  setInstanceCharacterLocation(instance.id, companionId, destination.id)
                   send("character_moved", {
                     characterId: companionId,
                     characterName: companion?.name ?? null,
@@ -472,6 +504,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                   })
                   dispatchWebhook("scenario.character_moved", {
                     scenarioId: scenario.id,
+            instanceId: instance.id,
                     characterId: companionId,
                     locationId: destination.id,
                   })
@@ -521,7 +554,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     context,
                     speaker: speakerCharacter,
                     recentMessages: recent,
-                    signal: request.signal,
+                    // no signal: server completes the turn even if the client navigates away
                   })
                   for (const m of extracted) {
                     const stored = addMemory({
@@ -572,7 +605,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
                     context,
                     recentMessages: recent,
                     unknownPairs,
-                    signal: request.signal,
+                    // no signal: server completes the turn even if the client navigates away
                   })
                   for (const l of learnings) {
                     const changed = markKnowsName(l.knowerId, l.knownId)
@@ -613,7 +646,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       } catch (error) {
         send("error", { message: error instanceof Error ? error.message : String(error) })
       } finally {
-        controller.close()
+        try {
+          controller.close()
+        } catch {
+          // stream already closed because the client disconnected
+        }
       }
     },
   })

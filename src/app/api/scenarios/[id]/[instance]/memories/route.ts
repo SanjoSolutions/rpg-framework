@@ -1,14 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getCharacter, listCharacters } from "@/lib/characters"
+import { getInstanceByNumber } from "@/lib/instances"
 import { extractReferencedCharacterIds, listMemoriesForScene } from "@/lib/memories"
 import { getScenario } from "@/lib/scenarios"
 
 export const runtime = "nodejs"
 
-export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params
+function resolveInstance(scenarioId: string, instanceParam: string) {
+  const number = Number(instanceParam)
+  if (!Number.isInteger(number) || number < 1) return null
+  return getInstanceByNumber(scenarioId, number)
+}
+
+export async function GET(
+  _request: NextRequest,
+  ctx: { params: Promise<{ id: string; instance: string }> },
+) {
+  const { id, instance: instanceParam } = await ctx.params
   const scenario = getScenario(id)
   if (!scenario) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  const instance = resolveInstance(id, instanceParam)
+  if (!instance) return NextResponse.json({ error: "Instance not found" }, { status: 404 })
 
   const characters = scenario.characterIds
     .map((cid) => getCharacter(cid))
@@ -21,7 +33,7 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: st
     memories: listMemoriesForScene({
       ownerCharacterId: c.id,
       presentCharacterIds: presentIds,
-      locationId: scenario.locationId,
+      locationId: instance.activeLocationId,
     }),
   }))
 

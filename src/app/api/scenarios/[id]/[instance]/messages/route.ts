@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { appendMessage, clearScenarioMessages, listMessages } from "@/lib/messages"
+import { getInstanceByNumber } from "@/lib/instances"
+import { appendMessage, listInstanceMessages } from "@/lib/messages"
 import { getScenario, touchScenario } from "@/lib/scenarios"
 import { dispatchWebhook } from "@/lib/webhooks"
 
@@ -12,15 +13,31 @@ const userMessageSchema = z.object({
   role: z.enum(["director", "participant"]).optional(),
 })
 
-export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params
-  if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  return NextResponse.json({ messages: listMessages(id) })
+function resolveInstance(scenarioId: string, instanceParam: string) {
+  const number = Number(instanceParam)
+  if (!Number.isInteger(number) || number < 1) return null
+  return getInstanceByNumber(scenarioId, number)
 }
 
-export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params
+export async function GET(
+  _request: NextRequest,
+  ctx: { params: Promise<{ id: string; instance: string }> },
+) {
+  const { id, instance: instanceParam } = await ctx.params
   if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  const instance = resolveInstance(id, instanceParam)
+  if (!instance) return NextResponse.json({ error: "Instance not found" }, { status: 404 })
+  return NextResponse.json({ messages: listInstanceMessages(instance.id) })
+}
+
+export async function POST(
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string; instance: string }> },
+) {
+  const { id, instance: instanceParam } = await ctx.params
+  if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  const instance = resolveInstance(id, instanceParam)
+  if (!instance) return NextResponse.json({ error: "Instance not found" }, { status: 404 })
   const body = await request.json().catch(() => null)
   const parsed = userMessageSchema.safeParse(body)
   if (!parsed.success) {
@@ -29,6 +46,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const role = parsed.data.role ?? "director"
   const message = appendMessage({
     scenarioId: id,
+    instanceId: instance.id,
     speakerKind: role === "director" ? "narrator" : "user",
     speakerName:
       role === "director" ? "Director" : parsed.data.speakerName?.trim() || "You",
@@ -37,13 +55,4 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   touchScenario(id)
   dispatchWebhook("message.created", { message })
   return NextResponse.json({ message }, { status: 201 })
-}
-
-export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params
-  if (!getScenario(id)) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  clearScenarioMessages(id)
-  touchScenario(id)
-  dispatchWebhook("message.cleared", { scenarioId: id })
-  return NextResponse.json({ ok: true })
 }

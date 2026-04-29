@@ -1,4 +1,5 @@
 import Database from "better-sqlite3"
+import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, renameSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { getUserDataDir } from "./user-data-dir"
@@ -92,16 +93,41 @@ function applySchema(db: Database.Database): void {
       FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS scenario_instances (
+      id TEXT PRIMARY KEY,
+      scenario_id TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      active_location_id TEXT,
+      transcript_summary TEXT NOT NULL DEFAULT '',
+      transcript_summary_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      UNIQUE (scenario_id, number),
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+      FOREIGN KEY (active_location_id) REFERENCES locations(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS instance_characters (
+      instance_id TEXT NOT NULL,
+      character_id TEXT NOT NULL,
+      location_id TEXT,
+      PRIMARY KEY (instance_id, character_id),
+      FOREIGN KEY (instance_id) REFERENCES scenario_instances(id) ON DELETE CASCADE,
+      FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+    );
+
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       scenario_id TEXT NOT NULL,
+      instance_id TEXT,
       speaker_kind TEXT NOT NULL,
       speaker_id TEXT,
       speaker_name TEXT NOT NULL,
       content TEXT NOT NULL,
       kind TEXT,
       created_at INTEGER NOT NULL,
-      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+      FOREIGN KEY (instance_id) REFERENCES scenario_instances(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_scenario ON messages(scenario_id, created_at);
@@ -210,6 +236,10 @@ function applySchema(db: Database.Database): void {
   if (!messageColumnNames.has("kind")) {
     db.exec("ALTER TABLE messages ADD COLUMN kind TEXT")
   }
+  if (!messageColumnNames.has("instance_id")) {
+    db.exec("ALTER TABLE messages ADD COLUMN instance_id TEXT")
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_messages_instance ON messages(instance_id, created_at)")
 
   const scenarioColumns = db
     .prepare("SELECT name FROM pragma_table_info('scenarios')")
@@ -249,6 +279,8 @@ function applySchema(db: Database.Database): void {
     SELECT scenario_id, location_id FROM scenario_characters WHERE location_id IS NOT NULL
   `)
 
+  backfillScenarioInstances(db)
+
   // Backfill empty stranger_name values with unique "Stranger N" labels.
   const missing = db
     .prepare(
@@ -270,6 +302,89 @@ function applySchema(db: Database.Database): void {
       for (const row of missing) {
         update.run(`Stranger ${next}`, row.id)
         next += 1
+      }
+    })
+    tx()
+  }
+}
+
+interface ScenarioBackfillRow {
+  id: string
+  location_id: string | null
+  transcript_summary: string
+  transcript_summary_count: number
+  created_at: number
+}
+
+interface ScenarioCharacterRow {
+  scenario_id: string
+  character_id: string
+  location_id: string | null
+}
+
+function backfillScenarioInstances(db: Database.Database): void {
+  const scenariosNeedingInstance = db
+    .prepare(
+      `SELECT s.id, s.location_id, s.transcript_summary, s.transcript_summary_count, s.created_at
+         FROM scenarios s
+         LEFT JOIN scenario_instances si ON si.scenario_id = s.id
+         WHERE si.id IS NULL`,
+    )
+    .all() as ScenarioBackfillRow[]
+
+  if (scenariosNeedingInstance.length > 0) {
+    const insertInstance = db.prepare(
+      `INSERT INTO scenario_instances
+         (id, scenario_id, number, active_location_id, transcript_summary, transcript_summary_count, created_at)
+         VALUES (?, ?, 1, ?, ?, ?, ?)`,
+    )
+    const insertChar = db.prepare(
+      `INSERT OR IGNORE INTO instance_characters (instance_id, character_id, location_id)
+         VALUES (?, ?, ?)`,
+    )
+    const updateMessages = db.prepare(
+      `UPDATE messages SET instance_id = ? WHERE scenario_id = ? AND instance_id IS NULL`,
+    )
+    const tx = db.transaction(() => {
+      for (const s of scenariosNeedingInstance) {
+        const instanceId = randomUUID()
+        insertInstance.run(
+          instanceId,
+          s.id,
+          s.location_id,
+          s.transcript_summary,
+          s.transcript_summary_count,
+          s.created_at,
+        )
+        const chars = db
+          .prepare(
+            "SELECT scenario_id, character_id, location_id FROM scenario_characters WHERE scenario_id = ?",
+          )
+          .all(s.id) as ScenarioCharacterRow[]
+        for (const c of chars) insertChar.run(instanceId, c.character_id, c.location_id)
+        updateMessages.run(instanceId, s.id)
+      }
+    })
+    tx()
+  }
+
+  // Defensive: any messages still missing an instance get attached to instance #1.
+  const orphanScenarios = db
+    .prepare(
+      `SELECT DISTINCT scenario_id FROM messages WHERE instance_id IS NULL`,
+    )
+    .all() as { scenario_id: string }[]
+  if (orphanScenarios.length > 0) {
+    const findInstance = db.prepare(
+      "SELECT id FROM scenario_instances WHERE scenario_id = ? AND number = 1",
+    )
+    const updateMessages = db.prepare(
+      `UPDATE messages SET instance_id = ? WHERE scenario_id = ? AND instance_id IS NULL`,
+    )
+    const tx = db.transaction(() => {
+      for (const row of orphanScenarios) {
+        const found = findInstance.get(row.scenario_id) as { id: string } | undefined
+        if (found) updateMessages.run(found.id, row.scenario_id)
       }
     })
     tx()
