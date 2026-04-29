@@ -41,6 +41,70 @@ export function stripLeadingSpeakerLabel(text: string): string {
   return followUp >= 0 ? stripped.slice(0, followUp) : stripped
 }
 
+/**
+ * Streaming variant: holds back leading text until either the speaker-label
+ * prefix is consumed or it's clear no prefix can match. Lets `delta` events
+ * skip the prefix entirely so it never reaches the UI or TTS.
+ */
+export function createLeadingLabelStripper() {
+  const HOLD = 70
+  let buffer = ""
+  let done = false
+  const tryMatch = (s: string) =>
+    /^\s*\[[^\]\n]{1,60}\]\s*:\s*/.exec(s) ?? /^\s*[A-Z][\w .'-]{0,40}:\s+/.exec(s)
+  return {
+    push(chunk: string): string {
+      if (done) return chunk
+      buffer += chunk
+      const m = tryMatch(buffer)
+      if (m) {
+        const out = buffer.slice(m[0].length)
+        buffer = ""
+        done = true
+        return out
+      }
+      const trimmed = buffer.replace(/^\s+/, "")
+      if (trimmed.length === 0) return ""
+      const couldBracket = trimmed[0] === "["
+      const couldName = /^[A-Z]/.test(trimmed[0])
+      if (!couldBracket && !couldName) {
+        const out = buffer
+        buffer = ""
+        done = true
+        return out
+      }
+      if (!couldBracket) {
+        const tail = trimmed.slice(1)
+        const colonIdx = tail.indexOf(":")
+        const dq = /[^\w .'\-]/.exec(tail)
+        const dqBeforeColon = dq && (colonIdx === -1 || dq.index < colonIdx)
+        const tooLongWithoutColon = colonIdx === -1 && tail.length > 41
+        if (dqBeforeColon || tooLongWithoutColon) {
+          const out = buffer
+          buffer = ""
+          done = true
+          return out
+        }
+      }
+      if (buffer.length >= HOLD) {
+        const out = buffer
+        buffer = ""
+        done = true
+        return out
+      }
+      return ""
+    },
+    flush(): string {
+      if (done) return ""
+      done = true
+      const m = tryMatch(buffer)
+      const out = m ? buffer.slice(m[0].length) : buffer
+      buffer = ""
+      return out
+    },
+  }
+}
+
 function shiftMarkdownHeadings(text: string, minLevel: number): string {
   const headingRegex = /^(#{1,6})(?=\s)/gm
   let smallest = Number.POSITIVE_INFINITY

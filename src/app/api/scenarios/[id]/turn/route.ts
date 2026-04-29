@@ -26,6 +26,7 @@ import {
   proposeIntent,
   requestConsent,
   requestMoveConsent,
+  createLeadingLabelStripper,
   streamCharacterTurn,
   stripLeadingSpeakerLabel,
   type ConsentRefusal,
@@ -153,6 +154,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         memories?: Memory[]
       }) => {
         let buffered = ""
+        const stripper = createLeadingLabelStripper()
         await streamCharacterTurn({
           backend,
           context,
@@ -170,9 +172,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           signal: request.signal,
           onText: (chunk) => {
             buffered += chunk
-            send("delta", { content: chunk })
+            const visible = stripper.push(chunk)
+            if (visible.length > 0) send("delta", { content: visible })
           },
         })
+        const tail = stripper.flush()
+        if (tail.length > 0) send("delta", { content: tail })
         const trimmed = stripLeadingSpeakerLabel(buffered).trim()
         if (trimmed.length > 0) {
           const message = appendMessage({
