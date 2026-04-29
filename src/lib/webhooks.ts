@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto"
 import { getDb } from "./db"
+import { FEATURES } from "./feature-flags"
 import { getLogger } from "./logger"
 
 const logger = getLogger({ module: "webhooks" })
@@ -175,6 +176,7 @@ async function deliver(webhook: Webhook, payload: DispatchPayload): Promise<void
 }
 
 export function dispatchWebhook(event: WebhookEvent, data: unknown): void {
+  if (!FEATURES.webhooks) return
   let subscribers: Webhook[]
   try {
     subscribers = listWebhooks().filter((w) => w.enabled && w.events.includes(event))

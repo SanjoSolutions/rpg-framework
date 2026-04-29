@@ -1,4 +1,5 @@
 import { getDb } from "./db"
+import { FEATURES } from "./feature-flags"
 import { LLM_BACKENDS, type LLMBackend } from "./llm/types"
 import { DEFAULT_SETTINGS, type AppSettings } from "./settings-types"
 import { TTS_BACKENDS, type TtsBackend } from "./tts/types"
@@ -47,9 +48,9 @@ export function getSettings(): AppSettings {
     xaiApiKey: map.get("xaiApiKey") ?? "",
     ollamaUrl: map.get("ollamaUrl") ?? DEFAULT_SETTINGS.ollamaUrl,
     ollamaModel: map.get("ollamaModel") ?? DEFAULT_SETTINGS.ollamaModel,
-    requireConsent: map.get("requireConsent") === "true",
-    memoriesEnabled: map.get("memoriesEnabled") === "true",
-    learnNames: map.get("learnNames") === "true",
+    requireConsent: FEATURES.requireConsent && map.get("requireConsent") === "true",
+    memoriesEnabled: FEATURES.memoriesEnabled && map.get("memoriesEnabled") === "true",
+    learnNames: FEATURES.learnNames && map.get("learnNames") === "true",
   }
 }
 
