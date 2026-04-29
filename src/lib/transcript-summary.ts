@@ -71,7 +71,7 @@ export async function ensureTranscriptSummary(args: {
   const newMessages = messages.slice(cachedCount, olderCount)
   const newChars = totalChars(newMessages)
   if (newChars < SUMMARY_FOLD_INCREMENT_CHARS) {
-    logger.info(
+    logger.debug(
       {
         scenarioId: scenario.id,
         coveredCount: cachedCount,
@@ -109,7 +109,7 @@ export async function ensureTranscriptSummary(args: {
   instance.transcriptSummaryCount = olderCount
   scenario.transcriptSummary = summary
   scenario.transcriptSummaryCount = olderCount
-  logger.info(
+  logger.debug(
     {
       scenarioId: scenario.id,
       previousCount: cachedCount,

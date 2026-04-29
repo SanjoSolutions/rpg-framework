@@ -34,7 +34,7 @@ interface StreamOptions extends StreamChatArgs {
 export async function streamChat(options: StreamOptions): Promise<void> {
   const strategy = getLLMStrategy(options.backend)
   const truncated = options.messages.slice(-MAX_HISTORY_MESSAGES)
-  logger.info(
+  logger.debug(
     { backend: options.backend, mode: "stream", system: options.system, messages: truncated },
     "LLM request",
   )
@@ -52,7 +52,7 @@ export async function streamChat(options: StreamOptions): Promise<void> {
       },
     })
   } finally {
-    logger.info({ backend: options.backend, mode: "stream", response }, "LLM response")
+    logger.debug({ backend: options.backend, mode: "stream", response }, "LLM response")
   }
 }
 
@@ -65,7 +65,7 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
   const truncatedHistory = (options.history ?? [])
     .filter((m) => m.role !== "system" && m.content.length > 0)
     .slice(-MAX_HISTORY_MESSAGES)
-  logger.info(
+  logger.debug(
     {
       backend: options.backend,
       mode: "once",
@@ -81,7 +81,7 @@ export async function generateOnce(options: GenerateOptions): Promise<string> {
     prompt: options.prompt,
     signal: options.signal,
   })
-  logger.info({ backend: options.backend, mode: "once", response: text }, "LLM response")
+  logger.debug({ backend: options.backend, mode: "once", response: text }, "LLM response")
   return text
 }
 
@@ -94,7 +94,7 @@ export async function generateObject<T>(options: GenerateObjectOptions<T>): Prom
   const truncatedHistory = (options.history ?? [])
     .filter((m) => m.role !== "system" && m.content.length > 0)
     .slice(-MAX_HISTORY_MESSAGES)
-  logger.info(
+  logger.debug(
     {
       backend: options.backend,
       mode: "object",
@@ -114,7 +114,7 @@ export async function generateObject<T>(options: GenerateObjectOptions<T>): Prom
     schemaDescription: options.schemaDescription,
     signal: options.signal,
   })
-  logger.info(
+  logger.debug(
     { backend: options.backend, mode: "object", schemaName: options.schemaName, response: result },
     "LLM response",
   )
