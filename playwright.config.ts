@@ -29,15 +29,20 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec next dev -H 127.0.0.1 --port ${PORT}`,
+    command:
+      process.env.PLAYWRIGHT_MODE === "prod"
+        ? `NEXT_PUBLIC_E2E=1 pnpm build && pnpm exec next start -H 127.0.0.1 --port ${PORT}`
+        : `pnpm exec next dev -H 127.0.0.1 --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: false,
-    timeout: 180_000,
+    timeout: 300_000,
     stdout: "pipe",
     stderr: "pipe",
     env: {
       RPG_DB_PATH: TEST_DB_PATH,
-      NODE_ENV: "development",
+      NODE_ENV:
+        process.env.PLAYWRIGHT_MODE === "prod" ? "production" : "development",
+      NEXT_PUBLIC_E2E: "1",
     },
   },
 })

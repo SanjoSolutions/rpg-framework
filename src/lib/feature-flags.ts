@@ -17,11 +17,12 @@
  */
 
 const IS_DEV = process.env.NODE_ENV === "development"
+const IS_E2E = process.env.NEXT_PUBLIC_E2E === "1"
 
 export const FEATURES = {
-  requireConsent: IS_DEV,
-  memoriesEnabled: IS_DEV,
-  learnNames: IS_DEV,
+  requireConsent: IS_DEV || IS_E2E,
+  memoriesEnabled: IS_DEV || IS_E2E,
+  learnNames: IS_DEV || IS_E2E,
   webhooks: true,
 } as const
 
