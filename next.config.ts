@@ -41,4 +41,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
 }
 
-export default withNextJsObfuscator(nextConfig)
+const isDev = process.env.NODE_ENV === "development"
+
+export default isDev ? nextConfig : withNextJsObfuscator(nextConfig)
