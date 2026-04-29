@@ -10,7 +10,9 @@ import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
+import { BROWSER_VOICE_GENDER, bestVoiceFor } from "@/lib/tts/browser/voices"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
+import type { Gender } from "@/lib/tts/xai/voices"
 import { XAI_DEFAULT_VOICE, XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -1047,9 +1049,10 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   await ended
 }
 
-type Gender = "male" | "female"
-
-const GROK_VOICE_GENDER: Record<string, Gender> = XAI_VOICE_GENDER
+const KNOWN_VOICE_GENDER: Record<string, Gender> = {
+  ...BROWSER_VOICE_GENDER,
+  ...XAI_VOICE_GENDER,
+}
 
 const FEMALE_NAME_HINT =
   /\b(samantha|zira|hazel|victoria|allison|tessa|moira|fiona|veena|karen|susan|catherine|linda|heather|kate|vicki|aria|jenny|amy|emma|nicole|sandy|lisa|amelia|joanna|kendra|kimberly|salli|ivy|raveena|aditi)\b/i
@@ -1069,6 +1072,11 @@ function pickBrowserVoice(gender: Gender): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null
   const voices = window.speechSynthesis.getVoices()
   if (voices.length === 0) return null
+  const best = bestVoiceFor(gender)
+  if (best) {
+    const match = voices.find((v) => v.name === best.name)
+    if (match) return match
+  }
   const english = voices.filter((v) => v.lang.toLowerCase().startsWith("en"))
   const pool = english.length > 0 ? english : voices
   return pool.find((v) => voiceMatchesGender(v, gender)) ?? null
@@ -1077,44 +1085,35 @@ function pickBrowserVoice(gender: Gender): SpeechSynthesisVoice | null {
 // Browsers (notably Chrome) return [] from speechSynthesis.getVoices() until
 // the voiceschanged event fires. Resolve once per speaker so the first
 // sentence doesn't fall through to the default voice.
-function pickBrowserVoiceByName(name: string): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null
-  const voices = window.speechSynthesis.getVoices()
-  return voices.find((v) => v.name === name) ?? null
-}
-
-function resolveBrowserVoiceByName(name: string): Promise<SpeechSynthesisVoice | null> {
+function resolveVoice(configured: string): Promise<SpeechSynthesisVoice | null> {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return Promise.resolve(null)
   }
   const synth = window.speechSynthesis
-  const immediate = pickBrowserVoiceByName(name)
-  if (immediate) return Promise.resolve(immediate)
-  if (synth.getVoices().length > 0) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    const finish = () => {
-      synth.removeEventListener("voiceschanged", finish)
-      clearTimeout(timer)
-      resolve(pickBrowserVoiceByName(name))
+  const trimmed = configured.trim()
+  const gender: Gender | null = trimmed
+    ? (KNOWN_VOICE_GENDER[trimmed.toLowerCase()] ?? null)
+    : null
+
+  const pick = (): SpeechSynthesisVoice | null => {
+    const voices = synth.getVoices()
+    if (voices.length === 0) return null
+    if (trimmed) {
+      const byName = voices.find((v) => v.name === trimmed)
+      if (byName) return byName
     }
-    synth.addEventListener("voiceschanged", finish)
-    const timer = setTimeout(finish, 1000)
-  })
-}
-
-function resolveBrowserVoice(gender: Gender): Promise<SpeechSynthesisVoice | null> {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-    return Promise.resolve(null)
+    if (gender) return pickBrowserVoice(gender)
+    return null
   }
-  const synth = window.speechSynthesis
-  const immediate = pickBrowserVoice(gender)
+
+  const immediate = pick()
   if (immediate) return Promise.resolve(immediate)
   if (synth.getVoices().length > 0) return Promise.resolve(null)
   return new Promise((resolve) => {
     const finish = () => {
       synth.removeEventListener("voiceschanged", finish)
       clearTimeout(timer)
-      resolve(pickBrowserVoice(gender))
+      resolve(pick())
     }
     synth.addEventListener("voiceschanged", finish)
     const timer = setTimeout(finish, 1000)
@@ -1125,22 +1124,13 @@ class SentenceSpeaker {
   private spokenChars = 0
   private buffer = ""
   private firstEmitted = false
-  private gender: Gender | null
   private voicePromise: Promise<SpeechSynthesisVoice | null>
 
   constructor(
     private prefix = "",
-    grokVoice = "",
+    configuredVoice = "",
   ) {
-    const trimmedVoice = grokVoice.trim()
-    this.gender = GROK_VOICE_GENDER[trimmedVoice.toLowerCase()] ?? null
-    if (this.gender) {
-      this.voicePromise = resolveBrowserVoice(this.gender)
-    } else if (trimmedVoice) {
-      this.voicePromise = resolveBrowserVoiceByName(trimmedVoice)
-    } else {
-      this.voicePromise = Promise.resolve(null)
-    }
+    this.voicePromise = resolveVoice(configuredVoice)
   }
 
   push(fullText: string): void {

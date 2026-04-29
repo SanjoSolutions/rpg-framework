@@ -43,7 +43,7 @@ export function CharacterForm({ mode, character }: Props) {
   const getEntity = () => ({ name, appearance, description, voice })
 
   const backendVoices: string[] =
-    ttsBackend === "browser" ? browserVoices : [...XAI_VOICES]
+    ttsBackend === "browser" ? browserVoices : XAI_VOICES.map((v) => v.name)
   const voiceOptions =
     voice && !backendVoices.includes(voice) ? [voice, ...backendVoices] : backendVoices
   const voiceSelectValue = voice && voiceOptions.includes(voice) ? voice : NO_VOICE
