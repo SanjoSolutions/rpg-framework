@@ -22,7 +22,7 @@ export const xaiTtsStrategy: TtsStrategy = {
       body: JSON.stringify({
         text,
         voice_id: voice,
-        output_format: { codec: "mp3", sample_rate: 44_100, bit_rate: 128_000 },
+        output_format: { codec: "mp3", sample_rate: 24_000, bit_rate: 64_000 },
         language: "en",
       }),
       signal,

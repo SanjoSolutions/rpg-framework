@@ -48,7 +48,7 @@ The settings page renders the active backend's settings component grouped inside
 
 ## Voice
 
-TTS strategies live under `src/lib/tts/` and follow the same pattern as LLM. Default strategy is `xai` — xAI HTTP TTS API. Per-character `voice` field is a voice id (e.g. `Eve`, `Rex`). Audio is cached on disk under `public/audio/{voice}/{hash}.mp3`. See `src/lib/tts/index.ts` and `/api/tts`.
+TTS strategies live under `src/lib/tts/` and follow the same pattern as LLM. Default strategy is `xai` — xAI HTTP TTS API. Per-character `voice` field is a voice id (e.g. `Eve`, `Rex`). See `src/lib/tts/index.ts` and `/api/tts`.
 
 ## RPG turn flow
 
