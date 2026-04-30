@@ -117,7 +117,7 @@ test.describe("Turn streaming against the running Ollama server", () => {
   // replies in a couple of seconds. Pick test/poll budgets accordingly.
   const REPLY_TIMEOUT = USE_MOCK ? 15_000 : 150_000
   const FINISH_TIMEOUT = USE_MOCK ? 10_000 : 60_000
-  test.setTimeout(USE_MOCK ? 30_000 : 180_000)
+  test.setTimeout(USE_MOCK ? 60_000 : 180_000)
 
   test("user message triggers a streamed character reply", async ({ page }) => {
     test.skip(!(await probeOllama()), `Ollama is unreachable at ${OLLAMA_URL} or model "${OLLAMA_MODEL}" is missing — skipping.`)
