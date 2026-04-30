@@ -346,40 +346,33 @@ function readmeFor(target, cfg) {
   const isWin = cfg.nodePlatform === "win32"
   const isMac = cfg.nodePlatform === "darwin"
   const lines = [
-    `RPG Framework — ${target} build`,
+    `RPG Framework`,
     ``,
-    `Layout:`,
-    `  ${cfg.exeName}    The application binary (Node ${NODE_VERSION} + your app)`,
-    `  app/      Next.js standalone runtime`,
-    `  docs/     API reference and other documentation`,
+    `How to start:`,
+    isWin
+      ? `  Double-click rpg-framework.exe`
+      : `  Double-click rpg-framework (or run ./rpg-framework in a terminal)`,
+    `  Then open http://localhost:3000 in your browser.`,
     ``,
-    `Run:`,
-    isWin ? `  rpg-framework.exe` : `  ./rpg-framework`,
-    ``,
-    `Then open http://localhost:3000`,
-    ``,
-    `Your data (SQLite database and cached audio) lives in the per-user`,
-    `app-data folder so it survives replacing this binary on update:`,
+    `Your characters, scenarios, and saved audio are kept here:`,
     isWin
       ? `  %APPDATA%\\rpg-framework`
       : isMac
         ? `  ~/Library/Application Support/rpg-framework`
-        : `  ~/.local/share/rpg-framework  (or $XDG_DATA_HOME/rpg-framework)`,
-    `Override the location by setting RPG_DATA_DIR before launching.`,
+        : `  ~/.local/share/rpg-framework`,
+    `They stay safe when you replace this folder with a newer version.`,
   ]
   if (isMac) {
     lines.push(
       ``,
-      `macOS note: this binary was produced on a non-macOS host and is unsigned.`,
-      `On first run, macOS Gatekeeper will block it. Either ad-hoc sign it:`,
-      `  codesign --sign - ./rpg-framework`,
-      `or right-click > Open the first time and confirm.`,
+      `First time on macOS: the system will block the app because it isn't signed.`,
+      `Right-click the app, choose Open, and confirm. After that it opens normally.`,
     )
   }
   if (isWin) {
     lines.push(
       ``,
-      `Windows note: SmartScreen may warn the first time. Click "More info" > "Run anyway".`,
+      `First time on Windows: SmartScreen may warn you. Click "More info" then "Run anyway".`,
     )
   }
   return lines.join("\n") + "\n"
