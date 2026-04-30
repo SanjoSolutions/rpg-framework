@@ -371,7 +371,13 @@ export function ScenarioPlay({
   }
 
   function preloadServerAudioFor(message: Message): PreloadedVoiceAudio | null {
-    if (!voiceEnabledRef.current || useBrowserTtsRef.current || serverTtsAvailableRef.current === false) return null
+    if (
+      !voiceEnabledRef.current ||
+      useBrowserTtsRef.current ||
+      serverTtsAvailableRef.current === false
+    ) {
+      return null
+    }
     if (!shouldVoiceMessage(message)) return null
     const character = characters.find((c) => c.id === message.speakerId)
     const voice = resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
@@ -380,142 +386,108 @@ export function ScenarioPlay({
   }
 
   type SSEEvent = { event: string; data: unknown }
-  type BufferedTurn =
-    | { kind: "ok"; events: SSEEvent[]; preloads: Map<number, PreloadedVoiceAudio> }
+  type TurnResult =
+    | { kind: "ok" }
     | { kind: "activation" }
     | { kind: "error"; message: string }
     | { kind: "aborted" }
 
-  async function generateTurnBuffered(): Promise<BufferedTurn | null> {
-    if (!hasCharacters) return null
+  interface PrefetchedTurn {
+    controller: AbortController
+    preloads: Map<number, PreloadedVoiceAudio>
+    done: Promise<TurnResult>
+    subscribe: (cb: (idx: number, ev: SSEEvent) => void) => void
+    release: () => void
+  }
+
+  // Opens the SSE turn stream and starts buffering events. If `subscribe` is
+  // called before the stream finishes, buffered events flush to the consumer
+  // synchronously and subsequent events forward live as they arrive — so the
+  // current turn streams chunk-by-chunk to the UI even when one-ahead prefetch
+  // has already pulled some events into memory.
+  function startTurnPrefetch(): PrefetchedTurn {
     const controller = new AbortController()
     abortsRef.current.add(controller)
-    const events: SSEEvent[] = []
+    const buffered: Array<{ idx: number; ev: SSEEvent }> = []
     const preloads = new Map<number, PreloadedVoiceAudio>()
+    let consumer: ((idx: number, ev: SSEEvent) => void) | null = null
+    let nextIdx = 0
     let mainPreloaded = false
-    try {
-      const res = await fetch(`${apiBase}/turn`, {
-        method: "POST",
-        signal: controller.signal,
-      })
-      if (res.status === 402) return { kind: "activation" }
-      if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => "")
-        return { kind: "error", message: text || `Turn failed (${res.status})` }
+
+    const dispatch = (ev: SSEEvent) => {
+      const idx = nextIdx++
+      if (ev.event === "message" && !mainPreloaded) {
+        const audio = preloadServerAudioFor(ev.data as Message)
+        if (audio) {
+          preloads.set(idx, audio)
+          mainPreloaded = true
+        }
       }
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const blocks = buffer.split("\n\n")
-        buffer = blocks.pop() ?? ""
-        for (const block of blocks) {
-          const lines = block.split("\n")
-          let event = "message"
-          let data = ""
-          for (const line of lines) {
-            if (line.startsWith("event:")) event = line.slice(6).trim()
-            else if (line.startsWith("data:")) data += line.slice(5).trim()
-          }
-          if (!data) continue
-          let payload: unknown
-          try {
-            payload = JSON.parse(data)
-          } catch {
-            continue
-          }
-          const idx = events.length
-          events.push({ event, data: payload })
-          if (event === "message" && !mainPreloaded) {
-            const m = payload as Message
-            const audio = preloadServerAudioFor(m)
-            if (audio) {
-              preloads.set(idx, audio)
-              mainPreloaded = true
+      if (consumer) consumer(idx, ev)
+      else buffered.push({ idx, ev })
+    }
+
+    const done: Promise<TurnResult> = (async () => {
+      try {
+        const res = await fetch(`${apiBase}/turn`, {
+          method: "POST",
+          signal: controller.signal,
+        })
+        if (res.status === 402) return { kind: "activation" }
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => "")
+          return { kind: "error", message: text || `Turn failed (${res.status})` }
+        }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ""
+        while (true) {
+          const { done: streamDone, value } = await reader.read()
+          if (streamDone) break
+          buffer += decoder.decode(value, { stream: true })
+          const blocks = buffer.split("\n\n")
+          buffer = blocks.pop() ?? ""
+          for (const block of blocks) {
+            const lines = block.split("\n")
+            let event = "message"
+            let data = ""
+            for (const line of lines) {
+              if (line.startsWith("event:")) event = line.slice(6).trim()
+              else if (line.startsWith("data:")) data += line.slice(5).trim()
             }
+            if (!data) continue
+            let payload: unknown
+            try {
+              payload = JSON.parse(data)
+            } catch {
+              continue
+            }
+            dispatch({ event, data: payload })
           }
         }
+        return { kind: "ok" }
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return { kind: "aborted" }
+        return { kind: "error", message: err instanceof Error ? err.message : "Turn failed" }
+      } finally {
+        abortsRef.current.delete(controller)
       }
-      return { kind: "ok", events, preloads }
-    } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") return { kind: "aborted" }
-      return { kind: "error", message: err instanceof Error ? err.message : "Turn failed" }
-    } finally {
-      abortsRef.current.delete(controller)
-    }
-  }
+    })()
 
-  async function commitBufferedTurn(buf: {
-    events: SSEEvent[]
-    preloads: Map<number, PreloadedVoiceAudio>
-  }): Promise<void> {
-    setError(null)
-    setActivationRequired(false)
-    setStatus(null)
-    setPendingTurn(null)
-    for (let i = 0; i < buf.events.length; i++) {
-      const { event, data } = buf.events[i]
-      if (event === "intent") {
-        const p = data as {
-          intent: string
-          speakerId: string | null
-          type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
-        }
-        const sname = characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
-        const isRequest = p.type === "REQUEST_CONSENT"
-        if (isRequest && showRequestInternals) {
-          enqueueVoice(p.speakerId, `${sname}. Request: ${p.intent}`)
-        }
-      } else if (event === "consent_response") {
-        const p = data as {
-          characterId: string
-          characterName?: string
-          decision: "yes" | "no"
-          feedback: string
-        }
-        const target = characters.find((c) => c.id === p.characterId)
-        const targetName = p.characterName ?? target?.name ?? "Speaker"
-        if (showRequestInternals) {
-          const verb = p.decision === "yes" ? "Consented" : "Refused"
-          enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
-        }
-      } else if (event === "message") {
-        const m = data as Message
-        setMessages((curr) => [...curr, m])
-        if (voiceEnabledRef.current && shouldVoiceMessage(m)) {
-          const preloaded = buf.preloads.get(i) ?? null
-          enqueueVoice(m.speakerId, m.content, speakerPrefix(m.speakerId), preloaded)
-        }
-      } else if (event === "character_moved") {
-        const p = data as { characterId: string; toLocationId: string }
-        setPlacement((curr) => ({ ...curr, [p.characterId]: p.toLocationId }))
-      } else if (event === "memory_learned") {
-        if (showMemories) refreshSceneMemories()
-      } else if (event === "error") {
-        setError((data as { message: string }).message)
-      }
-    }
-    try {
-      await ttsChainRef.current
-    } catch {
-      // ignore
-    }
-    if (useBrowserTtsRef.current && typeof window !== "undefined" && "speechSynthesis" in window) {
-      const synth = window.speechSynthesis
-      while (runningRef.current && (synth.speaking || synth.pending)) {
-        await new Promise((r) => setTimeout(r, 100))
-      }
-    }
-  }
-
-  function discardBufferedTurn(buf: {
-    preloads: Map<number, PreloadedVoiceAudio>
-  }): void {
-    for (const preloaded of buf.preloads.values()) {
-      preloaded.release()
+    return {
+      controller,
+      preloads,
+      done,
+      subscribe(cb) {
+        consumer = cb
+        const drained = buffered.splice(0, buffered.length)
+        for (const { idx, ev } of drained) cb(idx, ev)
+      },
+      release() {
+        controller.abort()
+        for (const p of preloads.values()) p.release()
+        preloads.clear()
+      },
     }
   }
 
@@ -530,188 +502,156 @@ export function ScenarioPlay({
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages, pendingTurn])
 
-  async function generateTurn(opts: { onVisibleDone?: () => void } = {}) {
-    if (!hasCharacters) {
-      setError("Add at least one character to this scenario before generating a turn.")
-      opts.onVisibleDone?.()
-      return
-    }
+  // Drives the UI off a `PrefetchedTurn`. Buffered events flush synchronously
+  // when subscribe attaches, then new events forward live as they arrive.
+  async function consumePrefetchedTurn(
+    prefetch: PrefetchedTurn,
+    opts: { onVisibleDone?: () => void } = {},
+  ): Promise<void> {
     setError(null)
     setActivationRequired(false)
     setBusy(true)
     setPendingTurn(null)
     setStatus(pickPhrase("picking"))
     const myGen = ++turnGenRef.current
-    const controller = new AbortController()
-    abortsRef.current.add(controller)
     let visibleDoneFired = false
     const fireVisibleDone = () => {
       if (visibleDoneFired) return
       visibleDoneFired = true
       opts.onVisibleDone?.()
     }
+    let speaker: PendingTurn | null = null
+
+    prefetch.subscribe((idx, { event, data: payload }) => {
+      if (turnGenRef.current !== myGen) return
+      if (event === "summarizing") {
+        setStatus(pickPhrase("summarizing"))
+      } else if (event === "picking") {
+        setStatus(pickPhrase("picking"))
+      } else if (event === "intent") {
+        const p = payload as {
+          intent: string
+          speakerId: string | null
+          targetIds?: string[]
+          type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
+        }
+        const speakerName =
+          characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
+        const isRequest = p.type === "REQUEST_CONSENT"
+        const playful = pickPhrase(intentPhase(p.type), speakerName)
+        const intent = p.intent?.trim()
+        setStatus(intent ? `${playful} — ${intent}` : playful)
+        if (isRequest && showRequestInternals) {
+          enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
+        }
+      } else if (event === "consent_request") {
+        const p = payload as { targetId: string; targetName: string }
+        setStatus(pickPhrase("consent", p.targetName))
+      } else if (event === "consent_response") {
+        const p = payload as {
+          characterId: string
+          characterName?: string
+          decision: "yes" | "no"
+          feedback: string
+        }
+        const target = characters.find((c) => c.id === p.characterId)
+        const targetName = p.characterName ?? target?.name ?? "Speaker"
+        setStatus(
+          pickPhrase(p.decision === "yes" ? "consented" : "refused", targetName),
+        )
+        if (showRequestInternals) {
+          const verb = p.decision === "yes" ? "Consented" : "Refused"
+          enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
+        }
+      } else if (event === "speaker") {
+        const p = payload as SpeakerInfo
+        speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
+        setPendingTurn(speaker)
+        setStatus(pickPhrase("speaker", p.name))
+        sentenceSpeakerRef.current = null
+        const shouldUseBrowserTts = useBrowserTtsRef.current
+        if (
+          voiceEnabledRef.current &&
+          (shouldUseBrowserTts || serverTtsAvailableRef.current === false) &&
+          p.kind === "character" &&
+          p.characterId
+        ) {
+          const character = characters.find((c) => c.id === p.characterId)
+          const fallbackVoice = shouldUseBrowserTts
+            ? (character?.voice ?? "")
+            : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
+          sentenceSpeakerRef.current = new SentenceSpeaker(
+            speakerPrefix(p.characterId),
+            fallbackVoice,
+          )
+        }
+      } else if (event === "delta" && speaker) {
+        const delta = (payload as { content: string }).content
+        const current: PendingTurn = speaker
+        const next: PendingTurn = { ...current, content: current.content + delta }
+        speaker = next
+        setPendingTurn(next)
+        setStatus(null)
+        sentenceSpeakerRef.current?.push(next.content)
+      } else if (event === "message") {
+        const message = payload as Message
+        setMessages((current) => [...current, message])
+        setPendingTurn(null)
+        if (sentenceSpeakerRef.current) {
+          sentenceSpeakerRef.current.flush()
+          sentenceSpeakerRef.current = null
+        } else if (voiceEnabledRef.current && message.speakerKind === "character") {
+          // Request/Consented/Refused already played (or skipped) by the
+          // labeled enqueue paths above. Fulfillment is gated on the same
+          // internals toggle as the rest of the consent protocol.
+          const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
+          const isFulfillment = message.kind === "fulfillment"
+          const skip = isLabeled || (isFulfillment && !showRequestInternals)
+          if (!skip) {
+            const preloaded = prefetch.preloads.get(idx) ?? null
+            enqueueVoice(
+              message.speakerId,
+              message.content,
+              speakerPrefix(message.speakerId),
+              preloaded,
+            )
+          }
+        }
+        // Re-enable inputs as soon as the user-visible turn lands. Memory
+        // and name-learning extraction still finish in the background.
+        if (turnGenRef.current === myGen) {
+          setBusy(false)
+        }
+      } else if (event === "done") {
+        setStatus(null)
+        fireVisibleDone()
+      } else if (event === "memory_learned") {
+        if (showMemories) refreshSceneMemories()
+      } else if (event === "character_moved") {
+        const p = payload as { characterId: string; toLocationId: string }
+        setPlacement((current) => ({ ...current, [p.characterId]: p.toLocationId }))
+      } else if (event === "error") {
+        setError((payload as { message: string }).message)
+      }
+    })
+
     try {
-      const res = await fetch(`${apiBase}/turn`, {
-        method: "POST",
-        signal: controller.signal,
-      })
-      if (res.status === 402) {
+      const result = await prefetch.done
+      if (result.kind === "activation") {
         setActivationRequired(true)
         runningRef.current = false
         setRunning(false)
         return
       }
-      if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => "")
-        throw new Error(text || `Turn failed (${res.status})`)
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-      let speaker: PendingTurn | null = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const events = buffer.split("\n\n")
-        buffer = events.pop() ?? ""
-        for (const block of events) {
-          const lines = block.split("\n")
-          let event = "message"
-          let data = ""
-          for (const line of lines) {
-            if (line.startsWith("event:")) event = line.slice(6).trim()
-            else if (line.startsWith("data:")) data += line.slice(5).trim()
-          }
-          if (!data) continue
-          let payload: unknown
-          try {
-            payload = JSON.parse(data)
-          } catch {
-            continue
-          }
-
-          if (event === "summarizing") {
-            setStatus(pickPhrase("summarizing"))
-          } else if (event === "picking") {
-            setStatus(pickPhrase("picking"))
-          } else if (event === "intent") {
-            const p = payload as {
-              intent: string
-              speakerId: string | null
-              targetIds?: string[]
-              type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
-            }
-            const speakerName =
-              characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
-            const isRequest = p.type === "REQUEST_CONSENT"
-            const playful = pickPhrase(intentPhase(p.type), speakerName)
-            const intent = p.intent?.trim()
-            setStatus(intent ? `${playful} — ${intent}` : playful)
-            if (isRequest && showRequestInternals) {
-              enqueueVoice(p.speakerId, `${speakerName}. Request: ${p.intent}`)
-            }
-          } else if (event === "consent_request") {
-            const p = payload as { targetId: string; targetName: string }
-            setStatus(pickPhrase("consent", p.targetName))
-          } else if (event === "consent_response") {
-            const p = payload as {
-              characterId: string
-              characterName?: string
-              decision: "yes" | "no"
-              feedback: string
-            }
-            const target = characters.find((c) => c.id === p.characterId)
-            const targetName = p.characterName ?? target?.name ?? "Speaker"
-            setStatus(
-              pickPhrase(p.decision === "yes" ? "consented" : "refused", targetName),
-            )
-            if (showRequestInternals) {
-              const verb = p.decision === "yes" ? "Consented" : "Refused"
-              enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
-            }
-          } else if (event === "speaker") {
-            const p = payload as SpeakerInfo
-            speaker = { kind: p.kind, characterId: p.characterId, name: p.name, content: "" }
-            setPendingTurn(speaker)
-            setStatus(pickPhrase("speaker", p.name))
-            sentenceSpeakerRef.current = null
-            const shouldUseBrowserTts = useBrowserTtsRef.current
-            if (
-              voiceEnabledRef.current &&
-              (shouldUseBrowserTts || serverTtsAvailableRef.current === false) &&
-              p.kind === "character" &&
-              p.characterId
-            ) {
-              const character = characters.find((c) => c.id === p.characterId)
-              const fallbackVoice = shouldUseBrowserTts
-                ? (character?.voice ?? "")
-                : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
-              sentenceSpeakerRef.current = new SentenceSpeaker(
-                speakerPrefix(p.characterId),
-                fallbackVoice,
-              )
-            }
-          } else if (event === "delta" && speaker) {
-            const delta = (payload as { content: string }).content
-            const current: PendingTurn = speaker
-            const next: PendingTurn = { ...current, content: current.content + delta }
-            speaker = next
-            setPendingTurn(next)
-            setStatus(null)
-            sentenceSpeakerRef.current?.push(next.content)
-          } else if (event === "message") {
-            const message = payload as Message
-            setMessages((current) => [...current, message])
-            setPendingTurn(null)
-            if (sentenceSpeakerRef.current) {
-              sentenceSpeakerRef.current.flush()
-              sentenceSpeakerRef.current = null
-            } else if (voiceEnabledRef.current && message.speakerKind === "character") {
-              // Request/Consented/Refused already played (or skipped) by the
-              // labeled enqueue paths above. Fulfillment is gated on the same
-              // internals toggle as the rest of the consent protocol.
-              const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
-              const isFulfillment = message.kind === "fulfillment"
-              const skip = isLabeled || (isFulfillment && !showRequestInternals)
-              if (!skip) {
-                enqueueVoice(message.speakerId, message.content, speakerPrefix(message.speakerId))
-              }
-            }
-            // Re-enable inputs as soon as the user-visible turn lands. Memory
-            // and name-learning extraction still finish in the background.
-            if (turnGenRef.current === myGen) {
-              setBusy(false)
-            }
-          } else if (event === "done") {
-            // Visible work is done — let the auto-loop start the next turn
-            // while post-tasks (memory/name extraction) finish on this stream.
-            setStatus(null)
-            fireVisibleDone()
-          } else if (event === "memory_learned") {
-            if (showMemories) refreshSceneMemories()
-          } else if (event === "character_moved") {
-            const p = payload as { characterId: string; toLocationId: string }
-            setPlacement((current) => ({ ...current, [p.characterId]: p.toLocationId }))
-          } else if (event === "error") {
-            setError((payload as { message: string }).message)
-          }
+      if (result.kind === "error") {
+        if (turnGenRef.current === myGen) {
+          setError(result.message)
         }
+        runningRef.current = false
+        setRunning(false)
       }
-    } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") {
-        fireVisibleDone()
-        return
-      }
-      if (turnGenRef.current === myGen) {
-        setError(err instanceof Error ? err.message : "Turn failed")
-      }
-      runningRef.current = false
-      setRunning(false)
+      // ok / aborted: nothing extra to do.
     } finally {
-      abortsRef.current.delete(controller)
       if (turnGenRef.current === myGen) {
         setBusy(false)
         setPendingTurn(null)
@@ -719,6 +659,15 @@ export function ScenarioPlay({
       }
       fireVisibleDone()
     }
+  }
+
+  async function generateTurn(opts: { onVisibleDone?: () => void } = {}) {
+    if (!hasCharacters) {
+      setError("Add at least one character to this scenario before generating a turn.")
+      opts.onVisibleDone?.()
+      return
+    }
+    await consumePrefetchedTurn(startTurnPrefetch(), opts)
   }
 
   async function sendUserMessage(event: React.FormEvent) {
@@ -789,35 +738,52 @@ export function ScenarioPlay({
     resetTtsQueue()
     setError(null)
     setActivationRequired(false)
-    // One-ahead generation: while the current turn is being shown and spoken,
-    // the next turn is fetched in the background and its TTS audio (server
-    // backends) is preloaded. The next turn is committed to the transcript
-    // only once the current turn finishes speaking.
-    let nextPromise: Promise<BufferedTurn | null> = generateTurnBuffered()
-    setStatus(pickPhrase("picking"))
+    // The first turn: prefetch starts immediately and the consumer subscribes
+    // before any meaningful events arrive, so it streams to the UI live.
+    // Subsequent turns: prefetch starts during the prior turn's TTS playback,
+    // so by the time we subscribe their events may already be buffered (they
+    // dump synchronously) — in which case TTS audio is already preloaded too.
+    let nextPrefetch: PrefetchedTurn | null = startTurnPrefetch()
+    let previousTtsTail: Promise<unknown> = Promise.resolve()
     while (runningRef.current && hasCharacters) {
-      const result = await nextPromise
-      setStatus(null)
-      if (!runningRef.current) {
-        if (result && result.kind === "ok") discardBufferedTurn(result)
+      // Wait for the prior turn's TTS so the just-finished turn keeps the UI
+      // before this one renders. No-op on the first iteration.
+      if (voiceEnabledRef.current) {
+        try {
+          await previousTtsTail
+        } catch {
+          // ignore
+        }
+        if (
+          useBrowserTtsRef.current &&
+          typeof window !== "undefined" &&
+          "speechSynthesis" in window
+        ) {
+          const synth = window.speechSynthesis
+          while (runningRef.current && (synth.speaking || synth.pending)) {
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+      }
+      const handle = nextPrefetch
+      nextPrefetch = null
+      if (!runningRef.current || !handle) {
+        handle?.release()
         break
       }
-      if (!result || result.kind === "aborted") break
-      if (result.kind === "activation") {
-        setActivationRequired(true)
-        break
-      }
-      if (result.kind === "error") {
-        setError(result.message)
-        break
-      }
-      // Kick off the next turn's generation in parallel with display + speak.
-      const continueLoop = runningRef.current && hasCharacters
-      nextPromise = continueLoop ? generateTurnBuffered() : Promise.resolve(null)
-      await commitBufferedTurn(result)
+      await new Promise<void>((resolve) => {
+        void consumePrefetchedTurn(handle, { onVisibleDone: resolve })
+      })
       if (!runningRef.current) break
-      if (continueLoop) setStatus(pickPhrase("picking"))
+      // Snapshot the TTS chain *now* so the next iteration only waits for THIS
+      // turn's queued audio, not whatever the next turn enqueues.
+      previousTtsTail = ttsChainRef.current
+      // Kick off the one-ahead prefetch for the next turn while current TTS plays.
+      if (runningRef.current && hasCharacters) {
+        nextPrefetch = startTurnPrefetch()
+      }
     }
+    if (nextPrefetch) nextPrefetch.release()
     setStatus(null)
     setBusy(false)
     runningRef.current = false
