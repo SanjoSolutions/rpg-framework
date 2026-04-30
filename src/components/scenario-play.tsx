@@ -138,6 +138,17 @@ export function ScenarioPlay({
   const turnGenRef = useRef(0)
   const ttsChainRef = useRef<Promise<unknown>>(Promise.resolve())
   const ttsTokenRef = useRef(0)
+  const voiceEnabledRef = useRef(voiceEnabled)
+  const useBrowserTtsRef = useRef(useBrowserTts)
+  const serverTtsAvailableRef = useRef(serverTtsAvailable)
+  const previousTtsBackendRef = useRef(ttsBackend)
+  voiceEnabledRef.current = voiceEnabled
+  useBrowserTtsRef.current = useBrowserTts
+  serverTtsAvailableRef.current = serverTtsAvailable
+
+  const advanceTtsToken = useCallback(() => {
+    ttsTokenRef.current = Number.isFinite(ttsTokenRef.current) ? ttsTokenRef.current + 1 : 0
+  }, [])
 
   function locationOf(characterId: string): string | null {
     if (Object.prototype.hasOwnProperty.call(placement, characterId)) {
@@ -203,9 +214,8 @@ export function ScenarioPlay({
     }
   }
 
-  useEffect(() => {
-    if (voiceEnabled) return
-    ttsTokenRef.current++
+  const stopTtsPlayback = useCallback(() => {
+    advanceTtsToken()
     ttsChainRef.current = Promise.resolve()
     sentenceSpeakerRef.current = null
     if (audioRef.current) {
@@ -218,19 +228,39 @@ export function ScenarioPlay({
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel()
     }
+  }, [advanceTtsToken])
+
+  useEffect(() => {
+    if (voiceEnabled) return
+    stopTtsPlayback()
     if (runningRef.current) {
       runningRef.current = false
       setRunning(false)
       setStopping(true)
     }
-  }, [voiceEnabled])
+  }, [stopTtsPlayback, voiceEnabled])
 
   useEffect(() => {
-    fetch("/api/tts/health")
+    const backendChanged = previousTtsBackendRef.current !== ttsBackend
+    previousTtsBackendRef.current = ttsBackend
+    if (backendChanged) {
+      stopTtsPlayback()
+    }
+    setServerTtsAvailable(null)
+    if (useBrowserTts) return
+    let cancelled = false
+    fetch("/api/tts/health", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : { available: false }))
-      .then((d) => setServerTtsAvailable(d.available))
-      .catch(() => setServerTtsAvailable(false))
-  }, [])
+      .then((d) => {
+        if (!cancelled) setServerTtsAvailable(d.available)
+      })
+      .catch(() => {
+        if (!cancelled) setServerTtsAvailable(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [stopTtsPlayback, ttsBackend, useBrowserTts])
 
   useEffect(() => {
     const aborts = abortsRef.current
@@ -240,7 +270,7 @@ export function ScenarioPlay({
       aborts.clear()
       sentenceSpeakerRef.current = null
       // Invalidate any queued voice plays — captured token will mismatch.
-      ttsTokenRef.current = NaN
+      advanceTtsToken()
       ttsChainRef.current = Promise.resolve()
       if (audioRef.current) {
         audioRef.current.pause()
@@ -255,7 +285,7 @@ export function ScenarioPlay({
         window.speechSynthesis.cancel()
       }
     }
-  }, [])
+  }, [advanceTtsToken])
 
   const refreshSceneMemories = useCallback(async () => {
     try {
@@ -294,10 +324,11 @@ export function ScenarioPlay({
     prefix = "",
     preloadedAudio: PreloadedVoiceAudio | null = null,
   ) {
-    if (!voiceEnabled) return
+    if (!voiceEnabledRef.current) return
     if (!characterId) return
     const character = characters.find((c) => c.id === characterId)
-    const voice = useBrowserTts
+    const shouldUseBrowserTts = useBrowserTtsRef.current
+    const voice = shouldUseBrowserTts
       ? (character?.voice ?? "")
       : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
     const trimmed = text.trim()
@@ -310,7 +341,8 @@ export function ScenarioPlay({
         }
         return
       }
-      if (useBrowserTts) {
+      if (shouldUseBrowserTts) {
+        preloadedAudio?.release()
         const speaker = new SentenceSpeaker(prefix, voice)
         speaker.push(trimmed)
         speaker.flush()
@@ -339,7 +371,7 @@ export function ScenarioPlay({
   }
 
   function preloadServerAudioFor(message: Message): PreloadedVoiceAudio | null {
-    if (!voiceEnabled || useBrowserTts || serverTtsAvailable === false) return null
+    if (!voiceEnabledRef.current || useBrowserTtsRef.current || serverTtsAvailableRef.current === false) return null
     if (!shouldVoiceMessage(message)) return null
     const character = characters.find((c) => c.id === message.speakerId)
     const voice = resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
@@ -453,7 +485,7 @@ export function ScenarioPlay({
       } else if (event === "message") {
         const m = data as Message
         setMessages((curr) => [...curr, m])
-        if (voiceEnabled && shouldVoiceMessage(m)) {
+        if (voiceEnabledRef.current && shouldVoiceMessage(m)) {
           const preloaded = buf.preloads.get(i) ?? null
           enqueueVoice(m.speakerId, m.content, speakerPrefix(m.speakerId), preloaded)
         }
@@ -471,7 +503,7 @@ export function ScenarioPlay({
     } catch {
       // ignore
     }
-    if (useBrowserTts && typeof window !== "undefined" && "speechSynthesis" in window) {
+    if (useBrowserTtsRef.current && typeof window !== "undefined" && "speechSynthesis" in window) {
       const synth = window.speechSynthesis
       while (runningRef.current && (synth.speaking || synth.pending)) {
         await new Promise((r) => setTimeout(r, 100))
@@ -488,7 +520,7 @@ export function ScenarioPlay({
   }
 
   function resetTtsQueue() {
-    ttsTokenRef.current++
+    advanceTtsToken()
     ttsChainRef.current = Promise.resolve()
     serverAudioStopRef.current?.()
     serverAudioStopRef.current = null
@@ -606,14 +638,15 @@ export function ScenarioPlay({
             setPendingTurn(speaker)
             setStatus(pickPhrase("speaker", p.name))
             sentenceSpeakerRef.current = null
+            const shouldUseBrowserTts = useBrowserTtsRef.current
             if (
-              voiceEnabled &&
-              (useBrowserTts || serverTtsAvailable === false) &&
+              voiceEnabledRef.current &&
+              (shouldUseBrowserTts || serverTtsAvailableRef.current === false) &&
               p.kind === "character" &&
               p.characterId
             ) {
               const character = characters.find((c) => c.id === p.characterId)
-              const fallbackVoice = useBrowserTts
+              const fallbackVoice = shouldUseBrowserTts
                 ? (character?.voice ?? "")
                 : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
               sentenceSpeakerRef.current = new SentenceSpeaker(
@@ -636,7 +669,7 @@ export function ScenarioPlay({
             if (sentenceSpeakerRef.current) {
               sentenceSpeakerRef.current.flush()
               sentenceSpeakerRef.current = null
-            } else if (voiceEnabled && message.speakerKind === "character") {
+            } else if (voiceEnabledRef.current && message.speakerKind === "character") {
               // Request/Consented/Refused already played (or skipped) by the
               // labeled enqueue paths above. Fulfillment is gated on the same
               // internals toggle as the rest of the consent protocol.
@@ -695,7 +728,7 @@ export function ScenarioPlay({
     setError(null)
     setBusy(true)
     try {
-      if (voiceEnabled) {
+      if (voiceEnabledRef.current) {
         await unlockTtsPlayback()
       }
       const res = await fetch(`${apiBase}/messages`, {
@@ -792,7 +825,7 @@ export function ScenarioPlay({
   }
 
   async function unlockTtsPlayback(): Promise<void> {
-    if (useBrowserTts) {
+    if (useBrowserTtsRef.current) {
       await unlockBrowserSpeech()
       return
     }
@@ -827,7 +860,7 @@ export function ScenarioPlay({
   }
 
   async function unlockServerAudioContext(): Promise<void> {
-    if (useBrowserTts || typeof window === "undefined") return
+    if (useBrowserTtsRef.current || typeof window === "undefined") return
     const win = window as typeof window & { webkitAudioContext?: typeof AudioContext }
     const AudioContextConstructor = window.AudioContext ?? win.webkitAudioContext
     if (!AudioContextConstructor) return

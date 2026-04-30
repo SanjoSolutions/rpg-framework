@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -16,6 +17,38 @@ import { DEFAULT_SETTINGS, type AppSettings } from "@/lib/settings-types"
 import { TTS_BACKENDS, type TtsBackend } from "@/lib/tts/types"
 
 const VOICE_KEY = "rpg-voice-enabled"
+const SETTINGS_CHANNEL = "rpg-settings"
+const SETTINGS_UPDATED = "settings-updated"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function mergeSettingsPayload(prev: AppSettings, data: unknown): AppSettings {
+  if (!isRecord(data)) return prev
+  const next: AppSettings = { ...prev }
+  if (typeof data.llmBackend === "string" && LLM_BACKENDS.includes(data.llmBackend as LLMBackend)) {
+    next.llmBackend = data.llmBackend as LLMBackend
+  }
+  if (typeof data.ttsBackend === "string" && TTS_BACKENDS.includes(data.ttsBackend as TtsBackend)) {
+    next.ttsBackend = data.ttsBackend as TtsBackend
+  }
+  if (typeof data.xaiApiKey === "string") next.xaiApiKey = data.xaiApiKey
+  if (typeof data.ollamaUrl === "string") next.ollamaUrl = data.ollamaUrl
+  if (typeof data.ollamaModel === "string") next.ollamaModel = data.ollamaModel
+  if (typeof data.playerName === "string" && data.playerName.trim()) next.playerName = data.playerName
+  if (typeof data.requireConsent === "boolean") next.requireConsent = data.requireConsent
+  if (typeof data.memoriesEnabled === "boolean") next.memoriesEnabled = data.memoriesEnabled
+  if (typeof data.learnNames === "boolean") next.learnNames = data.learnNames
+  return next
+}
+
+function broadcastSettings(settings: AppSettings): void {
+  if (typeof BroadcastChannel === "undefined") return
+  const channel = new BroadcastChannel(SETTINGS_CHANNEL)
+  channel.postMessage({ type: SETTINGS_UPDATED, settings })
+  channel.close()
+}
 
 const voiceListeners = new Set<() => void>()
 function subscribeVoice(listener: () => void) {
@@ -67,43 +100,82 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const voiceEnabled = useSyncExternalStore(subscribeVoice, readVoice, readVoiceServer)
+  const settingsWriteIdRef = useRef(0)
+  const pendingSettingsWritesRef = useRef(0)
+
+  const refreshSettings = useCallback(async (signal?: AbortSignal) => {
+    if (pendingSettingsWritesRef.current > 0) return
+    const res = await fetch("/api/settings", { cache: "no-store", signal })
+    if (!res.ok) return
+    const data = await res.json().catch(() => null)
+    setSettings((prev) => mergeSettingsPayload(prev, data))
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
-    fetch("/api/settings")
+    const controller = new AbortController()
+    fetch("/api/settings", { cache: "no-store", signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data) return
-        setSettings((prev) => {
-          const next: AppSettings = { ...prev }
-          if (LLM_BACKENDS.includes(data.llmBackend)) next.llmBackend = data.llmBackend
-          if (TTS_BACKENDS.includes(data.ttsBackend)) next.ttsBackend = data.ttsBackend
-          if (typeof data.xaiApiKey === "string") next.xaiApiKey = data.xaiApiKey
-          if (typeof data.ollamaUrl === "string") next.ollamaUrl = data.ollamaUrl
-          if (typeof data.ollamaModel === "string") next.ollamaModel = data.ollamaModel
-          if (typeof data.playerName === "string" && data.playerName.trim()) next.playerName = data.playerName
-          if (typeof data.requireConsent === "boolean") next.requireConsent = data.requireConsent
-          if (typeof data.memoriesEnabled === "boolean") next.memoriesEnabled = data.memoriesEnabled
-          if (typeof data.learnNames === "boolean") next.learnNames = data.learnNames
-          return next
-        })
+        if (!controller.signal.aborted) {
+          setSettings((prev) => mergeSettingsPayload(prev, data))
+        }
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setLoaded(true)
+        if (!controller.signal.aborted) setLoaded(true)
       })
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [])
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const refreshVisibleSettings = () => {
+      if (document.visibilityState === "visible") {
+        void refreshSettings()
+      }
+    }
+    window.addEventListener("focus", refreshVisibleSettings)
+    document.addEventListener("visibilitychange", refreshVisibleSettings)
+    return () => {
+      window.removeEventListener("focus", refreshVisibleSettings)
+      document.removeEventListener("visibilitychange", refreshVisibleSettings)
+    }
+  }, [refreshSettings])
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return
+    const channel = new BroadcastChannel(SETTINGS_CHANNEL)
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      const data = event.data
+      if (!isRecord(data) || data.type !== SETTINGS_UPDATED) return
+      setSettings((prev) => mergeSettingsPayload(prev, data.settings))
+    }
+    return () => channel.close()
+  }, [])
+
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    const writeId = ++settingsWriteIdRef.current
+    pendingSettingsWritesRef.current++
     setSettings((prev) => ({ ...prev, ...patch }))
     fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
-    }).catch(() => {})
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (writeId !== settingsWriteIdRef.current) return
+        if (!data) return
+        const next = mergeSettingsPayload(DEFAULT_SETTINGS, data)
+        setSettings(next)
+        broadcastSettings(next)
+      })
+      .catch(() => {})
+      .finally(() => {
+        pendingSettingsWritesRef.current = Math.max(0, pendingSettingsWritesRef.current - 1)
+      })
   }, [])
 
   const setLlmBackend = useCallback(
