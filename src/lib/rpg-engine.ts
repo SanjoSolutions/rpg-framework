@@ -1085,6 +1085,7 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     speaker.kind === "character"
       ? context.characters.find((c) => c.id === speaker.characterId) ?? null
       : null
+  const isSolo = context.characters.length === 1
 
   const knownNameIds = args.knowledge?.knownNameIds ?? new Set<string>()
   const metIds = args.knowledge?.metIds ?? new Set<string>()
@@ -1182,9 +1183,13 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
           "Stay focused on observable scene-level events.",
         ].join("\n")
 
-  const primer = (character != null
+  const primerHead =
+    character != null
       ? `You are ${character.name}, a character in a role play game.`
-      : "You are a character in a role play game.") + "  Write your turn as a single short paragraph in first person present tense. Example shape: 'I tighten my grip on the hilt. \"Wait,\" I say.'"
+      : "You are a character in a role play game."
+  const primer = isSolo
+    ? `${primerHead}  Write your turn in first person present tense. Example shape: 'I tighten my grip on the hilt. \"Wait,\" I say.'`
+    : `${primerHead}  Write your turn as a single short paragraph in first person present tense. Example shape: 'I tighten my grip on the hilt. \"Wait,\" I say.'`
 
   const system = [
     primer,
@@ -1218,7 +1223,9 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     role: "user",
     content:
       character != null
-        ? "(Your turn. One paragraph: an action and optionally a line of dialogue.)"
+        ? isSolo
+          ? "(Your turn.)"
+          : "(Your turn. One paragraph: an action and optionally a line of dialogue.)"
         : "(Continue the scene — your turn.)",
   })
 
@@ -1228,6 +1235,6 @@ export async function streamCharacterTurn(args: StreamCharacterTurnArgs): Promis
     messages: chatMessages,
     signal: args.signal,
     onText: args.onText,
-    stop: character != null ? ["\n\n", "<|im_end|>"] : ["<|im_end|>"],
+    stop: character != null && !isSolo ? ["\n\n", "<|im_end|>"] : ["<|im_end|>"],
   })
 }
