@@ -279,7 +279,12 @@ export function ScenarioPlay({
     return collides ? character.name : ""
   }
 
-  function enqueueVoice(characterId: string | null, text: string, prefix = "") {
+  function enqueueVoice(
+    characterId: string | null,
+    text: string,
+    prefix = "",
+    preloadedAudio: HTMLAudioElement | null = null,
+  ) {
     if (!voiceEnabled) return
     if (!characterId) return
     const character = characters.find((c) => c.id === characterId)
@@ -290,12 +295,18 @@ export function ScenarioPlay({
     if (!trimmed) return
     const myToken = ttsTokenRef.current
     ttsChainRef.current = ttsChainRef.current.catch(() => {}).then(() => {
-      if (ttsTokenRef.current !== myToken) return
+      if (ttsTokenRef.current !== myToken) {
+        if (preloadedAudio) {
+          preloadedAudio.pause()
+          preloadedAudio.src = ""
+        }
+        return
+      }
       if (useBrowserTts) {
         const speaker = new SentenceSpeaker(prefix, voice)
         speaker.push(trimmed)
         speaker.flush()
-        return
+        return speaker.waitForDone()
       }
       return playVoice({
         voice,
@@ -303,8 +314,168 @@ export function ScenarioPlay({
         prefix,
         onServerFailure: () => setServerTtsAvailable(false),
         audioRef,
+        preloadedAudio,
       })
     })
+  }
+
+  function shouldVoiceMessage(message: Message): boolean {
+    if (message.speakerKind !== "character") return false
+    const isLabeled = /^(Request|Consented|Refused):/i.test(message.content.trim())
+    const isFulfillment = message.kind === "fulfillment"
+    if (isLabeled) return false
+    if (isFulfillment && !showRequestInternals) return false
+    return true
+  }
+
+  function preloadServerAudioFor(message: Message): HTMLAudioElement | null {
+    if (!voiceEnabled || useBrowserTts || serverTtsAvailable === false) return null
+    if (!shouldVoiceMessage(message)) return null
+    const character = characters.find((c) => c.id === message.speakerId)
+    const voice = resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
+    const prefix = speakerPrefix(message.speakerId)
+    return preloadVoiceAudio(voice, message.content, prefix)
+  }
+
+  type SSEEvent = { event: string; data: unknown }
+  type BufferedTurn =
+    | { kind: "ok"; events: SSEEvent[]; preloads: Map<number, HTMLAudioElement> }
+    | { kind: "activation" }
+    | { kind: "error"; message: string }
+    | { kind: "aborted" }
+
+  async function generateTurnBuffered(): Promise<BufferedTurn | null> {
+    if (!hasCharacters) return null
+    const controller = new AbortController()
+    abortsRef.current.add(controller)
+    const events: SSEEvent[] = []
+    const preloads = new Map<number, HTMLAudioElement>()
+    let mainPreloaded = false
+    try {
+      const res = await fetch(`${apiBase}/turn`, {
+        method: "POST",
+        signal: controller.signal,
+      })
+      if (res.status === 402) return { kind: "activation" }
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => "")
+        return { kind: "error", message: text || `Turn failed (${res.status})` }
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const blocks = buffer.split("\n\n")
+        buffer = blocks.pop() ?? ""
+        for (const block of blocks) {
+          const lines = block.split("\n")
+          let event = "message"
+          let data = ""
+          for (const line of lines) {
+            if (line.startsWith("event:")) event = line.slice(6).trim()
+            else if (line.startsWith("data:")) data += line.slice(5).trim()
+          }
+          if (!data) continue
+          let payload: unknown
+          try {
+            payload = JSON.parse(data)
+          } catch {
+            continue
+          }
+          const idx = events.length
+          events.push({ event, data: payload })
+          if (event === "message" && !mainPreloaded) {
+            const m = payload as Message
+            const audio = preloadServerAudioFor(m)
+            if (audio) {
+              preloads.set(idx, audio)
+              mainPreloaded = true
+            }
+          }
+        }
+      }
+      return { kind: "ok", events, preloads }
+    } catch (err) {
+      if ((err as { name?: string }).name === "AbortError") return { kind: "aborted" }
+      return { kind: "error", message: err instanceof Error ? err.message : "Turn failed" }
+    } finally {
+      abortsRef.current.delete(controller)
+    }
+  }
+
+  async function commitBufferedTurn(buf: {
+    events: SSEEvent[]
+    preloads: Map<number, HTMLAudioElement>
+  }): Promise<void> {
+    setError(null)
+    setActivationRequired(false)
+    setStatus(null)
+    setPendingTurn(null)
+    for (let i = 0; i < buf.events.length; i++) {
+      const { event, data } = buf.events[i]
+      if (event === "intent") {
+        const p = data as {
+          intent: string
+          speakerId: string | null
+          type?: "REQUEST_CONSENT" | "SPEAK" | "ACT" | "MOVE"
+        }
+        const sname = characters.find((c) => c.id === p.speakerId)?.name ?? "Speaker"
+        const isRequest = p.type === "REQUEST_CONSENT"
+        if (isRequest && showRequestInternals) {
+          enqueueVoice(p.speakerId, `${sname}. Request: ${p.intent}`)
+        }
+      } else if (event === "consent_response") {
+        const p = data as {
+          characterId: string
+          characterName?: string
+          decision: "yes" | "no"
+          feedback: string
+        }
+        const target = characters.find((c) => c.id === p.characterId)
+        const targetName = p.characterName ?? target?.name ?? "Speaker"
+        if (showRequestInternals) {
+          const verb = p.decision === "yes" ? "Consented" : "Refused"
+          enqueueVoice(p.characterId, `${targetName}. ${verb}: ${p.feedback}`)
+        }
+      } else if (event === "message") {
+        const m = data as Message
+        setMessages((curr) => [...curr, m])
+        if (voiceEnabled && shouldVoiceMessage(m)) {
+          const preloaded = buf.preloads.get(i) ?? null
+          enqueueVoice(m.speakerId, m.content, speakerPrefix(m.speakerId), preloaded)
+        }
+      } else if (event === "character_moved") {
+        const p = data as { characterId: string; toLocationId: string }
+        setPlacement((curr) => ({ ...curr, [p.characterId]: p.toLocationId }))
+      } else if (event === "memory_learned") {
+        if (showMemories) refreshSceneMemories()
+      } else if (event === "error") {
+        setError((data as { message: string }).message)
+      }
+    }
+    try {
+      await ttsChainRef.current
+    } catch {
+      // ignore
+    }
+    if (useBrowserTts && typeof window !== "undefined" && "speechSynthesis" in window) {
+      const synth = window.speechSynthesis
+      while (runningRef.current && (synth.speaking || synth.pending)) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+  }
+
+  function discardBufferedTurn(buf: {
+    preloads: Map<number, HTMLAudioElement>
+  }): void {
+    for (const audio of buf.preloads.values()) {
+      audio.pause()
+      audio.src = ""
+    }
   }
 
   function resetTtsQueue() {
@@ -550,35 +721,42 @@ export function ScenarioPlay({
     if (runningRef.current) return
     if (!hasCharacters) return
     resetTtsQueue()
+    setError(null)
+    setActivationRequired(false)
     runningRef.current = true
     setRunning(true)
-    // Cap pre-generation at one message in advance: each iteration generates
-    // the next turn while the previous one's TTS is still playing, then waits
-    // for that previous TTS to finish before starting another generation.
-    let previousTtsTail: Promise<unknown> = Promise.resolve()
+    setBusy(true)
+    // One-ahead generation: while the current turn is being shown and spoken,
+    // the next turn is fetched in the background and its TTS audio (server
+    // backends) is preloaded. The next turn is committed to the transcript
+    // only once the current turn finishes speaking.
+    let nextPromise: Promise<BufferedTurn | null> = generateTurnBuffered()
+    setStatus(pickPhrase("picking"))
     while (runningRef.current && hasCharacters) {
-      await new Promise<void>((resolve) => {
-        void generateTurn({ onVisibleDone: resolve })
-      })
-      if (!runningRef.current) break
-      if (voiceEnabled) {
-        try {
-          await previousTtsTail
-        } catch {
-          // ignore
-        }
-        // Browser speechSynthesis can't be partitioned per message, so drain
-        // it fully when that backend is in use.
-        if (useBrowserTts && typeof window !== "undefined" && "speechSynthesis" in window) {
-          const synth = window.speechSynthesis
-          while (runningRef.current && (synth.speaking || synth.pending)) {
-            await new Promise((r) => setTimeout(r, 100))
-          }
-        }
+      const result = await nextPromise
+      setStatus(null)
+      if (!runningRef.current) {
+        if (result && result.kind === "ok") discardBufferedTurn(result)
+        break
       }
-      previousTtsTail = ttsChainRef.current
+      if (!result || result.kind === "aborted") break
+      if (result.kind === "activation") {
+        setActivationRequired(true)
+        break
+      }
+      if (result.kind === "error") {
+        setError(result.message)
+        break
+      }
+      // Kick off the next turn's generation in parallel with display + speak.
+      const continueLoop = runningRef.current && hasCharacters
+      nextPromise = continueLoop ? generateTurnBuffered() : Promise.resolve(null)
+      await commitBufferedTurn(result)
       if (!runningRef.current) break
+      if (continueLoop) setStatus(pickPhrase("picking"))
     }
+    setStatus(null)
+    setBusy(false)
     runningRef.current = false
     setRunning(false)
   }
@@ -1091,13 +1269,24 @@ interface PlayVoiceArgs {
   prefix: string
   onServerFailure: () => void
   audioRef: React.MutableRefObject<HTMLAudioElement | null>
+  preloadedAudio?: HTMLAudioElement | null
+}
+
+function buildVoiceUrl(voice: string, text: string, prefix: string): string {
+  const spoken = prefix ? `${prefix}: ${text}` : text
+  return `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(spoken)}`
+}
+
+function preloadVoiceAudio(voice: string, text: string, prefix: string): HTMLAudioElement {
+  const audio = new Audio(buildVoiceUrl(voice, text, prefix))
+  audio.preload = "auto"
+  audio.load()
+  return audio
 }
 
 async function playVoice(args: PlayVoiceArgs): Promise<void> {
-  const { voice, text, prefix, onServerFailure, audioRef } = args
-  const spoken = prefix ? `${prefix}: ${text}` : text
-  const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(spoken)}`
-  const audio = new Audio(url)
+  const { voice, text, prefix, onServerFailure, audioRef, preloadedAudio } = args
+  const audio = preloadedAudio ?? new Audio(buildVoiceUrl(voice, text, prefix))
   if (audioRef.current) {
     audioRef.current.pause()
     audioRef.current.src = ""
@@ -1217,6 +1406,7 @@ class SentenceSpeaker {
   private buffer = ""
   private firstEmitted = false
   private voicePromise: Promise<SpeechSynthesisVoice | null>
+  private utterances: Promise<void>[] = []
 
   constructor(
     private prefix = "",
@@ -1252,14 +1442,24 @@ class SentenceSpeaker {
     if (trailing) this.emit(trailing)
   }
 
+  async waitForDone(): Promise<void> {
+    await Promise.allSettled(this.utterances)
+  }
+
   private emit(text: string): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return
     const out = !this.firstEmitted && this.prefix ? `${this.prefix}: ${text}` : text
     this.firstEmitted = true
-    void this.voicePromise.then((voice) => {
-      const utterance = new SpeechSynthesisUtterance(out)
-      if (voice) utterance.voice = voice
-      window.speechSynthesis.speak(utterance)
-    })
+    const spoken = this.voicePromise.then(
+      (voice) =>
+        new Promise<void>((resolve) => {
+          const utterance = new SpeechSynthesisUtterance(out)
+          utterance.onend = () => resolve()
+          utterance.onerror = () => resolve()
+          if (voice) utterance.voice = voice
+          window.speechSynthesis.speak(utterance)
+        }),
+    )
+    this.utterances.push(spoken)
   }
 }
