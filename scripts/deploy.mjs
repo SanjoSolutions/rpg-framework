@@ -2,9 +2,9 @@
 // Deploy the per-target SEA builds to itch.io via butler.
 //
 // Usage:
-//   pnpm deploy                              # all targets, reads ITCH_TARGET env
+//   pnpm deploy                              # all targets to sanjox/rpg-framework
 //   pnpm deploy linux-x64 win32-x64          # subset of targets
-//   ITCH_TARGET=user/game-slug pnpm deploy
+//   ITCH_TARGET=user/game-slug pnpm deploy   # override the default itch project
 //
 // Each target maps to an itch.io channel. Channel names follow butler's
 // platform-detection conventions so itch auto-tags downloads with the right OS:
@@ -16,7 +16,7 @@
 // Prereqs:
 //   * butler on PATH and logged in (`butler login`)
 //   * `pnpm build` then `pnpm run pack [targets...]` has produced
-//     dist/<target>/ trees. This script fails fast if a target is missing.
+//     dist/rpg-framework-<target>.zip files. This script fails fast if any are missing.
 
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
@@ -34,10 +34,11 @@ const CHANNELS = {
   "win32-x64": "windows-amd64",
 }
 
-const itchTarget = process.env.ITCH_TARGET
-if (!itchTarget || !/^[\w-]+\/[\w-]+$/.test(itchTarget)) {
+const DEFAULT_ITCH_TARGET = "sanjox/rpg-framework"
+const itchTarget = process.env.ITCH_TARGET ?? DEFAULT_ITCH_TARGET
+if (!/^[\w-]+\/[\w-]+$/.test(itchTarget)) {
   console.error(
-    "ITCH_TARGET must be set to your itch.io project (e.g. ITCH_TARGET=alice/my-game).",
+    `Invalid ITCH_TARGET "${itchTarget}". Expected user/game-slug (e.g. alice/my-game).`,
   )
   process.exit(1)
 }
@@ -56,11 +57,12 @@ for (const t of targets) {
 const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"))
 const userVersion = pkg.version
 
-const missing = targets.filter((t) => !existsSync(join(distDir, t, "app", "server.js")))
+const zipFor = (t) => join(distDir, `rpg-framework-${t}.zip`)
+const missing = targets.filter((t) => !existsSync(zipFor(t)))
 if (missing.length > 0) {
   console.error(
-    `Missing packed bundles for: ${missing.join(", ")}. ` +
-      `Run \`pnpm build\` then \`pnpm run pack ${missing.join(" ")}\` first.`,
+    `Missing zips for: ${missing.join(", ")}. ` +
+      `Run \`pnpm build ${missing.join(" ")}\` then \`pnpm run pack ${missing.join(" ")}\` first.`,
   )
   process.exit(1)
 }
@@ -68,11 +70,11 @@ if (missing.length > 0) {
 run("butler", ["--version"])
 
 for (const target of targets) {
-  const dir = join(distDir, target)
+  const zip = zipFor(target)
   const channel = CHANNELS[target]
   const dest = `${itchTarget}:${channel}`
   console.log(`\n=== Pushing ${target} -> ${dest} (v${userVersion}) ===`)
-  run("butler", ["push", dir, dest, "--userversion", userVersion])
+  run("butler", ["push", zip, dest, "--userversion", userVersion])
 }
 
 console.log(`\nDone. View status: butler status ${itchTarget}`)

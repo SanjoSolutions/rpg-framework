@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { isFeatureEnabled } from "./features"
 
 test.describe("Settings page", () => {
   test("renders backend selectors and gameplay toggles", async ({ page }) => {
@@ -13,7 +14,10 @@ test.describe("Settings page", () => {
   })
 
   test("toggling Memories persists across reload", async ({ page }) => {
-    await page.goto("/settings")
+    test.skip(
+      !(await isFeatureEnabled(page, /memor/i)),
+      "memoriesEnabled feature flag disabled in this build",
+    )
 
     const memoriesSwitch = page.getByRole("switch", { name: /memor/i }).first()
     await expect(memoriesSwitch).toBeVisible()

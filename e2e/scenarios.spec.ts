@@ -52,8 +52,8 @@ test.describe("Scenarios CRUD", () => {
 
     await page.getByRole("button", { name: "Create" }).click()
 
-    // Server redirects to /scenarios/<id>.
-    await expect(page).toHaveURL(/\/scenarios\/[^/]+$/, { timeout: 10_000 })
+    // Server redirects to the play screen at /scenarios/<id>/<instance>.
+    await expect(page).toHaveURL(/\/scenarios\/[^/]+\/\d+$/, { timeout: 10_000 })
     await expect(page.getByRole("heading", { name: scenarioName, level: 1 })).toBeVisible()
     await expect(page.getByText(`at ${locationName}`, { exact: false }).first()).toBeVisible()
     await expect(page.getByText(characterName, { exact: false }).first()).toBeVisible()
@@ -68,7 +68,7 @@ test.describe("Scenarios CRUD", () => {
     const editedSummary = `${summary} The lantern flickers ominously.`
     await page.locator("#summary").fill(editedSummary)
     await page.getByRole("button", { name: "Save" }).click()
-    await expect(page).toHaveURL(/\/scenarios\/[^/]+$/, { timeout: 10_000 })
+    await expect(page).toHaveURL(/\/scenarios\/[^/]+\/\d+$/, { timeout: 10_000 })
 
     // Verify on the listing page.
     await page.goto("/scenarios")
@@ -99,7 +99,7 @@ test.describe("Scenarios CRUD", () => {
     await page.getByLabel(locationName).first().check()
     await page.getByLabel(characterName).first().check()
     await page.getByRole("button", { name: "Create" }).click()
-    await expect(page).toHaveURL(/\/scenarios\/[^/]+$/, { timeout: 10_000 })
+    await expect(page).toHaveURL(/\/scenarios\/[^/]+\/\d+$/, { timeout: 10_000 })
 
     await page.goto("/scenarios")
     const row = page.locator("li", { hasText: scenarioName })
@@ -107,7 +107,7 @@ test.describe("Scenarios CRUD", () => {
     await expect(row.getByRole("link", { name: "Play" })).toBeVisible()
 
     await row.getByRole("link", { name: "Play" }).click()
-    await expect(page).toHaveURL(/\/scenarios\/[^/]+$/)
+    await expect(page).toHaveURL(/\/scenarios\/[^/]+\/\d+$/)
     await expect(page.getByRole("heading", { name: scenarioName, level: 1 })).toBeVisible()
   })
 })

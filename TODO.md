@@ -2,9 +2,13 @@
 
 # 0.1.0
 
+# 0.1.1
+
+* Fix that xAI TTS isn't hearable when character had a Google Chrome voice configured.
+* Can the xAI TTS speak latency be reduced?
+
 ## Pre-release
 
-* Inspect build
 * Has build the dev features removed?
 
 # Later

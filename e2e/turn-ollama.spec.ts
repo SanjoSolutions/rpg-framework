@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { isFeatureEnabled } from "./features"
 import { startMockOllama, type MockOllama } from "./mock-ollama"
 
 const USE_MOCK = process.env.MOCK_OLLAMA !== "0"
@@ -108,7 +109,7 @@ async function createScenario(page: Page, opts: {
   await page.getByLabel(opts.locationName).first().check()
   await page.getByLabel(opts.characterName).first().check()
   await page.getByRole("button", { name: "Create" }).click()
-  await expect(page).toHaveURL(/\/scenarios\/[^/]+$/, { timeout: 10_000 })
+  await expect(page).toHaveURL(/\/scenarios\/[^/]+\/\d+$/, { timeout: 10_000 })
 }
 
 test.describe("Turn streaming against the running Ollama server", () => {
@@ -120,6 +121,10 @@ test.describe("Turn streaming against the running Ollama server", () => {
 
   test("user message triggers a streamed character reply", async ({ page }) => {
     test.skip(!(await probeOllama()), `Ollama is unreachable at ${OLLAMA_URL} or model "${OLLAMA_MODEL}" is missing — skipping.`)
+    test.skip(
+      !(await isFeatureEnabled(page, /consent/i)),
+      "requireConsent feature flag disabled in this build (turn engine streams the reply only when consent is on)",
+    )
 
     await configureOllamaThroughUI(page)
 

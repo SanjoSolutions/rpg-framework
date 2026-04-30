@@ -31,7 +31,7 @@ export default defineConfig({
   webServer: {
     command:
       process.env.PLAYWRIGHT_MODE === "prod"
-        ? `NEXT_PUBLIC_E2E=1 pnpm build && pnpm exec next start -H 127.0.0.1 --port ${PORT}`
+        ? `NEXT_PUBLIC_E2E=1 pnpm exec next build --webpack && pnpm exec next start -H 127.0.0.1 --port ${PORT}`
         : `pnpm exec next dev -H 127.0.0.1 --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: false,
