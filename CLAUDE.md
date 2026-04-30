@@ -20,10 +20,23 @@ The app targets less-technical users. Configuration belongs in the settings UI (
 
 ```bash
 pnpm dev                  # Dev server
-pnpm build                # Production build
+pnpm build                # Production build (SEA bundles for all 4 targets)
 pnpm lint                 # ESLint
 pnpm test                 # Vitest unit tests
 ```
+
+## Release flow
+
+To cut a release (e.g. `0.1.1`):
+
+1. Bump `version` in `package.json`.
+2. `git commit -m "Release vX.Y.Z" && git tag vX.Y.Z`
+3. `pnpm test`
+4. `pnpm build` — produces `dist/<target>/` SEA trees.
+5. `pnpm run pack` — zips each target to `dist/rpg-framework-<target>.zip`. Use `pnpm run pack`, since bare `pnpm pack` is the npm builtin that creates a tarball of the package itself.
+6. `pnpm run deploy` — `butler push` each zip to `sanjox/rpg-framework`. Same caveat: bare `pnpm deploy` is a pnpm workspace builtin and will fail with `ERR_PNPM_CANNOT_DEPLOY`.
+
+Releases are tagged on the `fixes` branch (where `v0.1.0` lives).
 
 ## Tech stack
 
