@@ -13,7 +13,7 @@ import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
 import { BROWSER_VOICE_GENDER, bestVoiceFor } from "@/lib/tts/browser/voices"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import type { Gender } from "@/lib/tts/xai/voices"
-import { XAI_DEFAULT_VOICE, XAI_VOICE_GENDER } from "@/lib/tts/xai/voices"
+import { XAI_VOICE_GENDER, resolveXaiVoice } from "@/lib/tts/xai/voices"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -283,7 +283,9 @@ export function ScenarioPlay({
     if (!voiceEnabled) return
     if (!characterId) return
     const character = characters.find((c) => c.id === characterId)
-    const voice = character?.voice ?? (useBrowserTts ? "" : XAI_DEFAULT_VOICE)
+    const voice = useBrowserTts
+      ? (character?.voice ?? "")
+      : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
     const trimmed = text.trim()
     if (!trimmed) return
     const myToken = ttsTokenRef.current
@@ -429,7 +431,9 @@ export function ScenarioPlay({
               p.characterId
             ) {
               const character = characters.find((c) => c.id === p.characterId)
-              const fallbackVoice = character?.voice ?? (useBrowserTts ? "" : XAI_DEFAULT_VOICE)
+              const fallbackVoice = useBrowserTts
+                ? (character?.voice ?? "")
+                : resolveXaiVoice(character?.voice, KNOWN_VOICE_GENDER)
               sentenceSpeakerRef.current = new SentenceSpeaker(
                 speakerPrefix(p.characterId),
                 fallbackVoice,
