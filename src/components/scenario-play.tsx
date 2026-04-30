@@ -745,6 +745,7 @@ export function ScenarioPlay({
     // dump synchronously) — in which case TTS audio is already preloaded too.
     let nextPrefetch: PrefetchedTurn | null = startTurnPrefetch()
     let previousTtsTail: Promise<unknown> = Promise.resolve()
+    let hasPriorSpokenTurn = false
     while (runningRef.current && hasCharacters) {
       // Wait for the prior turn's TTS so the just-finished turn keeps the UI
       // before this one renders. No-op on the first iteration.
@@ -764,6 +765,10 @@ export function ScenarioPlay({
             await new Promise((r) => setTimeout(r, 100))
           }
         }
+        // 1-second beat between spoken turns.
+        if (hasPriorSpokenTurn && runningRef.current) {
+          await new Promise((r) => setTimeout(r, 1000))
+        }
       }
       const handle = nextPrefetch
       nextPrefetch = null
@@ -778,6 +783,7 @@ export function ScenarioPlay({
       // Snapshot the TTS chain *now* so the next iteration only waits for THIS
       // turn's queued audio, not whatever the next turn enqueues.
       previousTtsTail = ttsChainRef.current
+      hasPriorSpokenTurn = true
       // Kick off the one-ahead prefetch for the next turn while current TTS plays.
       if (runningRef.current && hasCharacters) {
         nextPrefetch = startTurnPrefetch()
