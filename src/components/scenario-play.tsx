@@ -10,6 +10,7 @@ import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
+import { wait } from "@/lib/utils"
 import { BROWSER_VOICE_GENDER, bestVoiceFor } from "@/lib/tts/browser/voices"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import type { Gender } from "@/lib/tts/xai/voices"
@@ -762,12 +763,12 @@ export function ScenarioPlay({
         ) {
           const synth = window.speechSynthesis
           while (runningRef.current && (synth.speaking || synth.pending)) {
-            await new Promise((r) => setTimeout(r, 100))
+            await wait(100)
           }
         }
         // 1-second beat between spoken turns.
         if (hasPriorSpokenTurn && runningRef.current) {
-          await new Promise((r) => setTimeout(r, 1000))
+          await wait(1000)
         }
       }
       const handle = nextPrefetch
