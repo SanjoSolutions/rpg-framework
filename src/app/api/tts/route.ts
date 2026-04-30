@@ -13,8 +13,14 @@ export async function GET(request: NextRequest) {
   if (!voice) return NextResponse.json({ error: "voice is required" }, { status: 400 })
 
   try {
-    const audioUrl = await generateTtsAudio({ text, voice, backend: getSettings().ttsBackend })
-    return NextResponse.redirect(new URL(audioUrl, request.url))
+    const buffer = await generateTtsAudio({ text, voice, backend: getSettings().ttsBackend })
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "audio/mpeg",
+        "Content-Length": String(buffer.length),
+        "Cache-Control": "no-store",
+      },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : "TTS failed"
     return NextResponse.json({ error: message }, { status: 500 })
