@@ -14,9 +14,33 @@ args = ["-y","mcp-refactor-typescript"]
 command = "npx"
 args = ["-y","next-devtools-mcp@latest"]
 
+[mcp_servers."next-devtools".tools.init]
+approval_mode = "approve"
+
+[mcp_servers."next-devtools".tools.nextjs_index]
+approval_mode = "approve"
+
+[mcp_servers."next-devtools".tools.nextjs_call]
+approval_mode = "approve"
+
+[mcp_servers."next-devtools".tools.nextjs_docs]
+approval_mode = "approve"
+
 [mcp_servers."playwright"]
 command = "npx"
 args = ["-y","@playwright/mcp@latest"]
+
+[mcp_servers."playwright".tools.browser_navigate]
+approval_mode = "approve"
+
+[mcp_servers."playwright".tools.browser_evaluate]
+approval_mode = "approve"
+
+[mcp_servers."playwright".tools.browser_click]
+approval_mode = "approve"
+
+[mcp_servers."playwright".tools.browser_run_code]
+approval_mode = "approve"
 
 [mcp_servers."supabase"]
 url = "http://127.0.0.1:54321/mcp"

@@ -131,6 +131,9 @@ export function ScenarioPlay({
   const abortsRef = useRef<Set<AbortController>>(new Set())
   const sentenceSpeakerRef = useRef<SentenceSpeaker | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const serverAudioStopRef = useRef<(() => void) | null>(null)
+  const browserSpeechUnlockedRef = useRef(false)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const turnGenRef = useRef(0)
   const ttsChainRef = useRef<Promise<unknown>>(Promise.resolve())
@@ -210,6 +213,8 @@ export function ScenarioPlay({
       audioRef.current.src = ""
       audioRef.current = null
     }
+    serverAudioStopRef.current?.()
+    serverAudioStopRef.current = null
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel()
     }
@@ -242,6 +247,10 @@ export function ScenarioPlay({
         audioRef.current.src = ""
         audioRef.current = null
       }
+      serverAudioStopRef.current?.()
+      serverAudioStopRef.current = null
+      void audioContextRef.current?.close()
+      audioContextRef.current = null
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel()
       }
@@ -283,7 +292,7 @@ export function ScenarioPlay({
     characterId: string | null,
     text: string,
     prefix = "",
-    preloadedAudio: HTMLAudioElement | null = null,
+    preloadedAudio: PreloadedVoiceAudio | null = null,
   ) {
     if (!voiceEnabled) return
     if (!characterId) return
@@ -297,8 +306,7 @@ export function ScenarioPlay({
     ttsChainRef.current = ttsChainRef.current.catch(() => {}).then(() => {
       if (ttsTokenRef.current !== myToken) {
         if (preloadedAudio) {
-          preloadedAudio.pause()
-          preloadedAudio.src = ""
+          preloadedAudio.release()
         }
         return
       }
@@ -314,6 +322,8 @@ export function ScenarioPlay({
         prefix,
         onServerFailure: () => setServerTtsAvailable(false),
         audioRef,
+        audioContextRef,
+        serverAudioStopRef,
         preloadedAudio,
       })
     })
@@ -328,7 +338,7 @@ export function ScenarioPlay({
     return true
   }
 
-  function preloadServerAudioFor(message: Message): HTMLAudioElement | null {
+  function preloadServerAudioFor(message: Message): PreloadedVoiceAudio | null {
     if (!voiceEnabled || useBrowserTts || serverTtsAvailable === false) return null
     if (!shouldVoiceMessage(message)) return null
     const character = characters.find((c) => c.id === message.speakerId)
@@ -339,7 +349,7 @@ export function ScenarioPlay({
 
   type SSEEvent = { event: string; data: unknown }
   type BufferedTurn =
-    | { kind: "ok"; events: SSEEvent[]; preloads: Map<number, HTMLAudioElement> }
+    | { kind: "ok"; events: SSEEvent[]; preloads: Map<number, PreloadedVoiceAudio> }
     | { kind: "activation" }
     | { kind: "error"; message: string }
     | { kind: "aborted" }
@@ -349,7 +359,7 @@ export function ScenarioPlay({
     const controller = new AbortController()
     abortsRef.current.add(controller)
     const events: SSEEvent[] = []
-    const preloads = new Map<number, HTMLAudioElement>()
+    const preloads = new Map<number, PreloadedVoiceAudio>()
     let mainPreloaded = false
     try {
       const res = await fetch(`${apiBase}/turn`, {
@@ -408,7 +418,7 @@ export function ScenarioPlay({
 
   async function commitBufferedTurn(buf: {
     events: SSEEvent[]
-    preloads: Map<number, HTMLAudioElement>
+    preloads: Map<number, PreloadedVoiceAudio>
   }): Promise<void> {
     setError(null)
     setActivationRequired(false)
@@ -470,17 +480,18 @@ export function ScenarioPlay({
   }
 
   function discardBufferedTurn(buf: {
-    preloads: Map<number, HTMLAudioElement>
+    preloads: Map<number, PreloadedVoiceAudio>
   }): void {
-    for (const audio of buf.preloads.values()) {
-      audio.pause()
-      audio.src = ""
+    for (const preloaded of buf.preloads.values()) {
+      preloaded.release()
     }
   }
 
   function resetTtsQueue() {
     ttsTokenRef.current++
     ttsChainRef.current = Promise.resolve()
+    serverAudioStopRef.current?.()
+    serverAudioStopRef.current = null
   }
 
   useEffect(() => {
@@ -684,6 +695,9 @@ export function ScenarioPlay({
     setError(null)
     setBusy(true)
     try {
+      if (voiceEnabled) {
+        await unlockTtsPlayback()
+      }
       const res = await fetch(`${apiBase}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -717,15 +731,31 @@ export function ScenarioPlay({
     setStopping(true)
   }
 
+  function handleVoiceEnabledChange(value: boolean) {
+    setVoiceEnabled(value)
+    if (value) {
+      void unlockTtsPlayback()
+    }
+  }
+
   async function startLoop() {
     if (runningRef.current) return
     if (!hasCharacters) return
-    resetTtsQueue()
-    setError(null)
-    setActivationRequired(false)
     runningRef.current = true
     setRunning(true)
     setBusy(true)
+    try {
+      await unlockTtsPlayback()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Voice playback failed to start")
+      setBusy(false)
+      runningRef.current = false
+      setRunning(false)
+      return
+    }
+    resetTtsQueue()
+    setError(null)
+    setActivationRequired(false)
     // One-ahead generation: while the current turn is being shown and spoken,
     // the next turn is fetched in the background and its TTS audio (server
     // backends) is preloaded. The next turn is committed to the transcript
@@ -759,6 +789,52 @@ export function ScenarioPlay({
     setBusy(false)
     runningRef.current = false
     setRunning(false)
+  }
+
+  async function unlockTtsPlayback(): Promise<void> {
+    if (useBrowserTts) {
+      await unlockBrowserSpeech()
+      return
+    }
+    await unlockServerAudioContext()
+  }
+
+  async function unlockBrowserSpeech(): Promise<void> {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return
+    const synth = window.speechSynthesis
+    synth.resume()
+    if (browserSpeechUnlockedRef.current) return
+    browserSpeechUnlockedRef.current = true
+    await new Promise<void>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(" ")
+      utterance.volume = 0
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        resolve()
+      }
+      const timer = window.setTimeout(finish, 250)
+      utterance.onend = finish
+      utterance.onerror = finish
+      try {
+        synth.speak(utterance)
+      } catch {
+        finish()
+      }
+    })
+  }
+
+  async function unlockServerAudioContext(): Promise<void> {
+    if (useBrowserTts || typeof window === "undefined") return
+    const win = window as typeof window & { webkitAudioContext?: typeof AudioContext }
+    const AudioContextConstructor = window.AudioContext ?? win.webkitAudioContext
+    if (!AudioContextConstructor) return
+    audioContextRef.current ??= new AudioContextConstructor()
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume()
+    }
   }
 
   async function startNewInstance() {
@@ -887,7 +963,7 @@ export function ScenarioPlay({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
-              <Switch checked={voiceEnabled} onCheckedChange={setVoiceEnabled} />
+              <Switch checked={voiceEnabled} onCheckedChange={handleVoiceEnabledChange} />
               Voice
             </label>
             <Button type="button" variant="outline" size="sm" onClick={startNewInstance}>
@@ -1269,24 +1345,73 @@ interface PlayVoiceArgs {
   prefix: string
   onServerFailure: () => void
   audioRef: React.MutableRefObject<HTMLAudioElement | null>
-  preloadedAudio?: HTMLAudioElement | null
+  audioContextRef: React.MutableRefObject<AudioContext | null>
+  serverAudioStopRef: React.MutableRefObject<(() => void) | null>
+  preloadedAudio?: PreloadedVoiceAudio | null
 }
 
-function buildVoiceUrl(voice: string, text: string, prefix: string): string {
-  const spoken = prefix ? `${prefix}: ${text}` : text
-  return `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(spoken)}`
+function spokenVoiceText(text: string, prefix: string): string {
+  return prefix ? `${prefix}: ${text}` : text
 }
 
-function preloadVoiceAudio(voice: string, text: string, prefix: string): HTMLAudioElement {
-  const audio = new Audio(buildVoiceUrl(voice, text, prefix))
-  audio.preload = "auto"
-  audio.load()
-  return audio
+async function fetchVoiceArrayBuffer(voice: string, text: string, prefix: string): Promise<ArrayBuffer> {
+  const spoken = spokenVoiceText(text, prefix)
+  const res = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ voice, text: spoken }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(body || `TTS failed (${res.status})`)
+  }
+  return res.arrayBuffer()
+}
+
+interface PreloadedVoiceAudio {
+  arrayBufferPromise: Promise<ArrayBuffer>
+  release: () => void
+}
+
+function preloadVoiceAudio(voice: string, text: string, prefix: string): PreloadedVoiceAudio {
+  const arrayBufferPromise = fetchVoiceArrayBuffer(voice, text, prefix)
+  void arrayBufferPromise.catch(() => {})
+  return {
+    arrayBufferPromise,
+    release: () => {},
+  }
 }
 
 async function playVoice(args: PlayVoiceArgs): Promise<void> {
-  const { voice, text, prefix, onServerFailure, audioRef, preloadedAudio } = args
-  const audio = preloadedAudio ?? new Audio(buildVoiceUrl(voice, text, prefix))
+  const {
+    voice,
+    text,
+    prefix,
+    onServerFailure,
+    audioRef,
+    audioContextRef,
+    serverAudioStopRef,
+    preloadedAudio,
+  } = args
+  let arrayBuffer: ArrayBuffer
+  try {
+    arrayBuffer = preloadedAudio
+      ? await preloadedAudio.arrayBufferPromise
+      : await fetchVoiceArrayBuffer(voice, text, prefix)
+  } catch {
+    onServerFailure()
+    const speaker = new SentenceSpeaker(prefix, voice)
+    speaker.push(text)
+    speaker.flush()
+    await speaker.waitForDone()
+    return
+  }
+  if (audioContextRef.current) {
+    await playVoiceWithAudioContext(arrayBuffer, audioContextRef.current, serverAudioStopRef)
+    return
+  }
+  const objectUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: "audio/mpeg" }))
+  const audio = new Audio(objectUrl)
   if (audioRef.current) {
     audioRef.current.pause()
     audioRef.current.src = ""
@@ -1294,6 +1419,7 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   audioRef.current = audio
   const release = () => {
     if (audioRef.current === audio) audioRef.current = null
+    URL.revokeObjectURL(objectUrl)
   }
   let resolveEnded: () => void = () => {}
   const ended = new Promise<void>((resolve) => {
@@ -1308,6 +1434,7 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
   audio.addEventListener("ended", handleEnded, { once: true })
   audio.addEventListener("pause", handleEnded, { once: true })
   let fellBack = false
+  let fallbackSpeech: Promise<void> | null = null
   const fallback = () => {
     if (fellBack) return
     fellBack = true
@@ -1318,6 +1445,7 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
     const speaker = new SentenceSpeaker(prefix, voice)
     speaker.push(text)
     speaker.flush()
+    fallbackSpeech = speaker.waitForDone()
     resolveEnded()
   }
   audio.addEventListener("error", fallback, { once: true })
@@ -1328,6 +1456,41 @@ async function playVoice(args: PlayVoiceArgs): Promise<void> {
     fallback()
   }
   await ended
+  await fallbackSpeech
+}
+
+async function playVoiceWithAudioContext(
+  arrayBuffer: ArrayBuffer,
+  audioContext: AudioContext,
+  serverAudioStopRef: React.MutableRefObject<(() => void) | null>,
+): Promise<void> {
+  if (audioContext.state === "suspended") {
+    await audioContext.resume()
+  }
+  const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0))
+  await new Promise<void>((resolve) => {
+    serverAudioStopRef.current?.()
+    const source = audioContext.createBufferSource()
+    source.buffer = decoded
+    source.connect(audioContext.destination)
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (serverAudioStopRef.current === stop) serverAudioStopRef.current = null
+      resolve()
+    }
+    const stop = () => {
+      try {
+        source.stop()
+      } catch {
+        finish()
+      }
+    }
+    source.onended = finish
+    serverAudioStopRef.current = stop
+    source.start()
+  })
 }
 
 const KNOWN_VOICE_GENDER: Record<string, Gender> = {

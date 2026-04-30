@@ -4,7 +4,8 @@
 
 # 0.1.1
 
-* Can the xAI TTS speak latency be reduced?
+* Fix: "AI SDK Warning (xai.responses / grok-4-1-fast-non-reasoning): The feature "stopSequences" is not supported."
+* Bug: Pressing Start and then Stop right away does not show the message that was being generated.
 
 ## Pre-release
 

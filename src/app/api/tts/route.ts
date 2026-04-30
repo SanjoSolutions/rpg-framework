@@ -4,11 +4,7 @@ import { generateTtsAudio } from "@/lib/tts"
 
 export const runtime = "nodejs"
 
-export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url)
-  const text = requestUrl.searchParams.get("text")?.trim()
-  const voice = requestUrl.searchParams.get("voice")?.trim()
-
+async function ttsResponse(text: string | undefined, voice: string | undefined) {
   if (!text) return NextResponse.json({ error: "text is required" }, { status: 400 })
   if (!voice) return NextResponse.json({ error: "voice is required" }, { status: 400 })
 
@@ -25,4 +21,23 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "TTS failed"
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url)
+  const text = requestUrl.searchParams.get("text")?.trim()
+  const voice = requestUrl.searchParams.get("voice")?.trim()
+
+  return ttsResponse(text, voice)
+}
+
+export async function POST(request: NextRequest) {
+  const body = (await request.json().catch(() => null)) as {
+    text?: unknown
+    voice?: unknown
+  } | null
+  const text = typeof body?.text === "string" ? body.text.trim() : undefined
+  const voice = typeof body?.voice === "string" ? body.voice.trim() : undefined
+
+  return ttsResponse(text, voice)
 }
