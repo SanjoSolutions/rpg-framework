@@ -858,7 +858,7 @@ export function ScenarioPlay({
             </div>
           )}
           {status && busy && <StatusPill text={status} />}
-          {!voiceEnabled && (
+          {(!voiceEnabled || characters.length === 1) && (
             <div className="flex justify-center">
               <Button
                 type="button"
