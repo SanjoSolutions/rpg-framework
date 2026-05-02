@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Deploy the per-target SEA builds to itch.io via butler.
+// Deploy the per-target SEA builds to itch.io via butler, then publish the
+// matching GitHub branch, tag, release, and ZIP assets.
 //
 // Usage:
 //   pnpm deploy                              # all targets to sanjox/rpg-framework
 //   pnpm deploy linux-x64 win32-x64          # subset of targets
 //   ITCH_TARGET=user/game-slug pnpm deploy   # override the default itch project
+//   GIT_REMOTE=upstream pnpm deploy          # override the default Git remote
 //
 // Each target maps to an itch.io channel. Channel names follow butler's
 // platform-detection conventions so itch auto-tags downloads with the right OS:
@@ -15,6 +17,8 @@
 //
 // Prereqs:
 //   * butler on PATH and logged in (`butler login`)
+//   * gh on PATH and logged in (`gh auth login`)
+//   * release tag v<package.json version> exists locally
 //   * `pnpm build` then `pnpm run pack [targets...]` has produced
 //     dist/rpg-framework-<target>.zip files. This script fails fast if any are missing.
 
@@ -35,7 +39,9 @@ const CHANNELS = {
 }
 
 const DEFAULT_ITCH_TARGET = "sanjox/rpg-framework"
+const DEFAULT_GIT_REMOTE = "origin"
 const itchTarget = process.env.ITCH_TARGET ?? DEFAULT_ITCH_TARGET
+const gitRemote = process.env.GIT_REMOTE ?? DEFAULT_GIT_REMOTE
 if (!/^[\w-]+\/[\w-]+$/.test(itchTarget)) {
   console.error(
     `Invalid ITCH_TARGET "${itchTarget}". Expected user/game-slug (e.g. alice/my-game).`,
@@ -56,6 +62,7 @@ for (const t of targets) {
 
 const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"))
 const userVersion = pkg.version
+const releaseTag = `v${userVersion}`
 
 const zipFor = (t) => join(distDir, `rpg-framework-${t}.zip`)
 const missing = targets.filter((t) => !existsSync(zipFor(t)))
@@ -68,6 +75,15 @@ if (missing.length > 0) {
 }
 
 run("butler", ["--version"])
+run("gh", ["--version"])
+
+if (!hasLocalGitTag(releaseTag)) {
+  console.error(
+    `Missing local release tag ${releaseTag}. ` +
+      `Run \`git tag ${releaseTag}\` before \`pnpm run deploy\`.`,
+  )
+  process.exit(1)
+}
 
 for (const target of targets) {
   const zip = zipFor(target)
@@ -77,7 +93,66 @@ for (const target of targets) {
   run("butler", ["push", zip, dest, "--userversion", userVersion])
 }
 
-console.log(`\nDone. View status: butler status ${itchTarget}`)
+pushGitHubRelease()
+
+console.log(`\nDone. View itch status: butler status ${itchTarget}`)
+console.log(`Done. View GitHub release: gh release view ${releaseTag}`)
+
+function pushGitHubRelease() {
+  const branch = currentGitBranch()
+  const zipAssets = targets.map(zipFor)
+
+  console.log(`\n=== Pushing ${branch} and ${releaseTag} -> ${gitRemote} ===`)
+  run("git", ["push", gitRemote, branch])
+  run("git", ["push", gitRemote, `refs/tags/${releaseTag}`])
+
+  console.log(`\n=== Publishing GitHub release ${releaseTag} ===`)
+  if (ghReleaseExists(releaseTag)) {
+    run("gh", ["release", "upload", releaseTag, ...zipAssets, "--clobber"])
+  } else {
+    run("gh", [
+      "release",
+      "create",
+      releaseTag,
+      ...zipAssets,
+      "--title",
+      releaseTag,
+      "--notes",
+      `Release ${releaseTag}`,
+    ])
+  }
+}
+
+function currentGitBranch() {
+  const r = spawnSync("git", ["branch", "--show-current"], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  })
+  if (r.status !== 0) {
+    throw new Error(`Command failed: git branch --show-current (exit ${r.status})`)
+  }
+  const branch = r.stdout.trim()
+  if (!branch) {
+    throw new Error("Deploy requires a checked-out branch.")
+  }
+  return branch
+}
+
+function hasLocalGitTag(tag) {
+  const r = spawnSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], {
+    cwd: projectRoot,
+    stdio: "ignore",
+  })
+  return r.status === 0
+}
+
+function ghReleaseExists(tag) {
+  const r = spawnSync("gh", ["release", "view", tag], {
+    cwd: projectRoot,
+    stdio: "ignore",
+  })
+  return r.status === 0
+}
 
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { stdio: "inherit", cwd: projectRoot })
