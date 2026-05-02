@@ -31,13 +31,11 @@ To cut a release (e.g. `0.1.1`):
 
 1. Bump `version` in `package.json`.
 2. `git commit -m "Release vX.Y.Z" && git tag vX.Y.Z`
-3. `pnpm test`
+3. `pnpm test && pnpm test:e2e`
 4. `pnpm build` — produces `dist/<target>/` SEA trees.
 5. `pnpm test:e2e:build` — Playwright E2E suite. All tests must pass before continuing.
 6. `pnpm run pack` — zips each target to `dist/rpg-framework-<target>.zip`. Use `pnpm run pack`, since bare `pnpm pack` is the npm builtin that creates a tarball of the package itself.
-7. `pnpm run deploy` — `butler push` each zip to `sanjox/rpg-framework`. Same caveat: bare `pnpm deploy` is a pnpm workspace builtin and will fail with `ERR_PNPM_CANNOT_DEPLOY`.
-
-Releases are tagged on the `fixes` branch (where `v0.1.0` lives).
+7. `pnpm run deploy` — `butler push` each zip to `sanjox/rpg-framework`, then push the branch and tag so GitHub Actions creates the GitHub release and uploads ZIP assets. Same caveat: bare `pnpm deploy` is a pnpm workspace builtin and will fail with `ERR_PNPM_CANNOT_DEPLOY`.
 
 ## Tech stack
 
