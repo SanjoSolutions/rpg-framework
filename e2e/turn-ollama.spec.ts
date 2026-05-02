@@ -158,7 +158,8 @@ test.describe("Turn streaming against the running Ollama server", () => {
     // Watch the SSE turn endpoint to confirm the server actually streams.
     const turnResponsePromise = page.waitForResponse(
       (response) =>
-        /\/api\/scenarios\/[^/]+\/turn$/.test(response.url()) && response.request().method() === "POST",
+        /\/api\/scenarios\/[^/]+\/[^/]+\/turn$/.test(response.url()) &&
+        response.request().method() === "POST",
       { timeout: 30_000 },
     )
 
@@ -202,11 +203,8 @@ test.describe("Turn streaming against the running Ollama server", () => {
       )
       .toBeGreaterThan(8)
 
-    // Once the stream is done, the Clear button (which is disabled while busy)
-    // becomes enabled — that's the cleanest signal that the turn finished.
-    await expect(page.getByRole("button", { name: "Clear" })).toBeEnabled({ timeout: FINISH_TIMEOUT })
+    await expect(input).toBeEnabled({ timeout: FINISH_TIMEOUT })
 
-    // Typing a new message re-enables the Send button.
     await input.fill("Anything else?")
     await expect(page.getByRole("button", { name: "Send" })).toBeEnabled()
   })
