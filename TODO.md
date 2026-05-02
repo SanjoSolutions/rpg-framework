@@ -2,8 +2,6 @@
 
 # 0.3.0
 
-* Remove "No turns yet. Send a message or generate a turn to start the scene."
-
 # Later
 
 * Refine "Add memory" form

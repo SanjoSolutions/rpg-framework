@@ -10,11 +10,11 @@ import type { Location } from "@/lib/locations"
 import type { Memory } from "@/lib/memories"
 import { renderMemoryContent } from "@/lib/memory-text"
 import type { ConsentEventMeta, Message, MessageMeta } from "@/lib/messages"
-import { wait } from "@/lib/utils"
 import { BROWSER_VOICE_GENDER, bestVoiceFor } from "@/lib/tts/browser/voices"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import type { Gender } from "@/lib/tts/xai/voices"
 import { XAI_VOICE_GENDER, resolveXaiVoice } from "@/lib/tts/xai/voices"
+import { wait } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 
@@ -836,11 +836,6 @@ export function ScenarioPlay({
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex flex-1 min-h-0">
         <div ref={transcriptRef} className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-3">
-          {messages.length === 0 && !pendingTurn && (
-            <p className="text-sm text-muted-foreground">
-              No turns yet. Send a message or generate a turn to start the scene.
-            </p>
-          )}
           {messages.map((m) => {
             const attached = messageConsents[m.id]
             const isInternal = /^(Request|Consented|Refused):/i.test(m.content.trim())
