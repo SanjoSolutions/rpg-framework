@@ -1,0 +1,125 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# model files (stored in ~/.chat-buddy-models/, outside project root)
+models/
+*.safetensors
+
+# generated images/videos
+/output/
+/input/
+
+# pre-generated companion photos and videos
+/public/photos/
+/public/videos/
+/public/profiles/
+
+# prompt-snippet test images
+/public/prompt-snippet-tests/
+
+# staged media uploads
+/public/uploads/
+
+# photo review data
+**/photo-reviews.json
+
+# LoRA dataset candidate images (large, generated locally)
+data/lora-datasets/*/candidates/
+
+# cached profile image
+/.cache/
+
+# RPG runtime data (SQLite + cached audio)
+/data/
+/public/audio/
+
+# electron
+electron/dist/
+dist-electron/
+
+# environment / init dotfiles
+.bash_profile
+.bashrc
+.zshrc
+.zprofile
+.profile
+.gitconfig
+.gitmodules
+.ripgreprc
+
+# IDE
+.idea
+.vscode
+
+# Claude Code
+.claude/settings.local.json
+
+# empty init artifacts
+/HEAD
+/config
+/hooks
+/objects
+/refs
+
+/.playwright-mcp
+/.playwright-mcp-config.json
+
+# Playwright auth state
+e2e/.auth/
+
+# Playwright test results
+/test-results/
+
+# Temporary stash for dev routes during production build
+/.dev-stash
+
+# local scratch
+a.txt
+GEMINI.md
+# temporary screenshots
+/*.png
+
+/.tmp
+/.worktrees/
+
+# MediaPipe WASM files (copied from node_modules by postinstall)
+/public/mediapipe/
