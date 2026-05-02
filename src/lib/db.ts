@@ -190,30 +190,7 @@ function applySchema(db: Database.Database): void {
       updated_at INTEGER NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS activation (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      access_token TEXT NOT NULL,
-      fingerprint TEXT NOT NULL,
-      activated_at INTEGER NOT NULL,
-      last_verified_at INTEGER NOT NULL
-    );
   `)
-
-  const activationColumns = db
-    .prepare("SELECT name FROM pragma_table_info('activation')")
-    .all() as { name: string }[]
-  const activationColumnNames = new Set(activationColumns.map((c) => c.name))
-  if (activationColumnNames.has("itch_user_id")) {
-    db.exec("ALTER TABLE activation DROP COLUMN itch_user_id")
-  }
-  if (activationColumnNames.has("itch_username")) {
-    db.exec("ALTER TABLE activation DROP COLUMN itch_username")
-  }
-  if (activationColumnNames.size > 0 && !activationColumnNames.has("fingerprint")) {
-    // Existing activations predate fingerprint binding; force reactivation rather than backfilling.
-    db.exec("DELETE FROM activation")
-    db.exec("ALTER TABLE activation ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''")
-  }
 
   const characterColumns = db
     .prepare("SELECT name FROM pragma_table_info('characters')")

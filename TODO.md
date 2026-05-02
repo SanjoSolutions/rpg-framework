@@ -1,9 +1,8 @@
 # TODO
 
-# 0.1.2
+# 0.3.0
 
-* Fix: "AI SDK Warning (xai.responses / grok-4-1-fast-non-reasoning): The feature "stopSequences" is not supported."
-* Bug: Pressing Start and then Stop right away does not show the message that was being generated.
+* Remove "No turns yet. Send a message or generate a turn to start the scene."
 
 # Later
 

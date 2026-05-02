@@ -42,8 +42,6 @@ import {
 import { getScenario, touchScenario } from "@/lib/scenarios"
 import { getSettings } from "@/lib/settings"
 import { dispatchWebhook } from "@/lib/webhooks"
-import { getValidActivation } from "@/lib/activation"
-import { FREE_TURN_LIMIT, getFreeTurnsUsed, incrementFreeTurnsUsed } from "@/lib/turn-usage"
 import { type NextRequest } from "next/server"
 
 const logger = getLogger({ component: "turn" })
@@ -64,14 +62,6 @@ export async function POST(
   if (!instance) return new Response("Instance not found", { status: 404 })
 
   const scenario = projectScenarioForInstance(template, instance)
-
-  const activated = !!getValidActivation()
-  if (!activated && getFreeTurnsUsed() >= FREE_TURN_LIMIT) {
-    return new Response(
-      `Free trial used (${FREE_TURN_LIMIT} turns). Activate the app from the Activate page to keep playing.`,
-      { status: 402 },
-    )
-  }
 
   const allCharacters = scenario.characterIds
     .map((cid) => getCharacter(cid))
@@ -632,8 +622,6 @@ export async function POST(
             )
           }
         }
-
-        if (!activated) incrementFreeTurnsUsed()
 
         // Emit done as soon as all user-visible work is finished so the
         // client can start the next turn while post-tasks (memory + name

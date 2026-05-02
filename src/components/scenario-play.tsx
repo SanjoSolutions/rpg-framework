@@ -15,8 +15,7 @@ import { BROWSER_VOICE_GENDER, bestVoiceFor } from "@/lib/tts/browser/voices"
 import { isBrowserTtsBackend } from "@/lib/tts/types"
 import type { Gender } from "@/lib/tts/xai/voices"
 import { XAI_VOICE_GENDER, resolveXaiVoice } from "@/lib/tts/xai/voices"
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 interface SpeakerInfo {
@@ -53,7 +52,6 @@ interface Props {
   initialActiveLocationId: string | null
   initialPlayerLocationId: string | null
   initialCharacterLocations: Record<string, string | null>
-  initialActivationRequired?: boolean
 }
 
 function seedMessageConsents(
@@ -87,7 +85,6 @@ export function ScenarioPlay({
   initialActiveLocationId,
   initialPlayerLocationId,
   initialCharacterLocations,
-  initialActivationRequired = false,
 }: Props) {
   const router = useRouter()
   const apiBase = `/api/scenarios/${scenarioId}/${instanceNumber}`
@@ -119,11 +116,6 @@ export function ScenarioPlay({
   }, [showLocations])
   const runningRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
-  const [activationRequired, setActivationRequired] = useState(initialActivationRequired)
-  const pathname = usePathname()
-  const activateHref = pathname
-    ? `/activate?returnTo=${encodeURIComponent(pathname)}`
-    : "/activate"
   const [serverTtsAvailable, setServerTtsAvailable] = useState<boolean | null>(null)
   const [sceneMemories, setSceneMemories] = useState<
     { characterId: string; characterName: string; memories: Memory[] }[]
@@ -389,7 +381,6 @@ export function ScenarioPlay({
   type SSEEvent = { event: string; data: unknown }
   type TurnResult =
     | { kind: "ok" }
-    | { kind: "activation" }
     | { kind: "error"; message: string }
     | { kind: "aborted" }
 
@@ -434,7 +425,6 @@ export function ScenarioPlay({
           method: "POST",
           signal: controller.signal,
         })
-        if (res.status === 402) return { kind: "activation" }
         if (!res.ok || !res.body) {
           const text = await res.text().catch(() => "")
           return { kind: "error", message: text || `Turn failed (${res.status})` }
@@ -510,7 +500,6 @@ export function ScenarioPlay({
     opts: { onVisibleDone?: () => void } = {},
   ): Promise<void> {
     setError(null)
-    setActivationRequired(false)
     setBusy(true)
     setPendingTurn(null)
     setStatus(pickPhrase("picking"))
@@ -638,12 +627,6 @@ export function ScenarioPlay({
 
     try {
       const result = await prefetch.done
-      if (result.kind === "activation") {
-        setActivationRequired(true)
-        runningRef.current = false
-        setRunning(false)
-        return
-      }
       if (result.kind === "error") {
         if (turnGenRef.current === myGen) {
           setError(result.message)
@@ -738,7 +721,6 @@ export function ScenarioPlay({
     }
     resetTtsQueue()
     setError(null)
-    setActivationRequired(false)
     // The first turn: prefetch starts immediately and the consumer subscribes
     // before any meaningful events arrive, so it streams to the UI live.
     // Subsequent turns: prefetch starts during the prior turn's TTS playback,
@@ -881,7 +863,7 @@ export function ScenarioPlay({
             </div>
           )}
           {status && busy && <StatusPill text={status} />}
-          {!voiceEnabled && !activationRequired && (
+          {!voiceEnabled && (
             <div className="flex justify-center">
               <Button
                 type="button"
@@ -895,19 +877,6 @@ export function ScenarioPlay({
               >
                 Next turn
               </Button>
-            </div>
-          )}
-          {activationRequired && (
-            <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
-              <div className="font-medium">Free turns used up</div>
-              <p className="text-sm text-muted-foreground">
-                You&apos;ve used all your free turns. Activate the app to keep playing.
-              </p>
-              <div>
-                <Button asChild size="sm">
-                  <Link href={activateHref}>Activate</Link>
-                </Button>
-              </div>
             </div>
           )}
         </div>
