@@ -17,6 +17,25 @@ the in-app UI, so anything you can do in the browser, you can do over HTTP.
 - **Errors** — non-2xx responses include `{ "error": "<message>" }`. Validation
   failures additionally include `details` from Zod's `flatten()`.
 
+## CLI
+
+The `rpg-framework` command is an HTTP client for the same local API. Start the
+app with `pnpm dev`, then run commands from another terminal:
+
+```bash
+pnpm cli characters list
+pnpm cli locations create --name "Park" --description "Shaded benches."
+pnpm cli scenarios turn <scenario-id> --instance 1
+```
+
+Use `--base-url` for another local port, `--data` or `--file` for raw JSON
+bodies, and `api <method> <path>` for any endpoint:
+
+```bash
+pnpm cli --base-url http://127.0.0.1:3001 api GET /api/settings
+pnpm cli api POST /api/characters --data '{"name":"Aria"}'
+```
+
 ---
 
 ## Characters

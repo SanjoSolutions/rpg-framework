@@ -3,8 +3,12 @@
   "version": "0.3.0",
   "license": "MIT",
   "private": true,
+  "bin": {
+    "rpg-framework": "./bin/rpg-framework.mjs"
+  },
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
+    "cli": "node bin/rpg-framework.mjs",
     "build": "node scripts/build.mjs",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
@@ -22,6 +26,7 @@
     "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "commander": "^14.0.3",
     "lucide-react": "^0.563.0",
     "next": "16.2.4",
     "pino": "^10.3.1",
