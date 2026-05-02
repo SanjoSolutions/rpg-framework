@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Deploy the per-target SEA builds to itch.io via butler, then publish the
-// matching GitHub branch, tag, release, and ZIP assets.
+// Deploy the per-target SEA builds to itch.io via butler, then push the
+// matching GitHub branch and tag. GitHub Actions builds and uploads release
+// ZIP assets after the tag reaches GitHub.
 //
 // Usage:
 //   pnpm deploy                              # all targets to sanjox/rpg-framework
@@ -17,10 +18,10 @@
 //
 // Prereqs:
 //   * butler on PATH and logged in (`butler login`)
-//   * gh on PATH and logged in (`gh auth login`)
 //   * release tag v<package.json version> exists locally
 //   * `pnpm build` then `pnpm run pack [targets...]` has produced
-//     dist/rpg-framework-<target>.zip files. This script fails fast if any are missing.
+//     dist/rpg-framework-<target>.zip files for itch.io. This script fails fast
+//     if any are missing.
 
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
@@ -75,8 +76,6 @@ if (missing.length > 0) {
 }
 
 run("butler", ["--version"])
-run("gh", ["--version"])
-
 if (!hasLocalGitTag(releaseTag)) {
   console.error(
     `Missing local release tag ${releaseTag}. ` +
@@ -93,34 +92,19 @@ for (const target of targets) {
   run("butler", ["push", zip, dest, "--userversion", userVersion])
 }
 
-pushGitHubRelease()
+pushGitHubTag()
 
 console.log(`\nDone. View itch status: butler status ${itchTarget}`)
-console.log(`Done. View GitHub release: gh release view ${releaseTag}`)
+console.log(
+  `Done. GitHub Actions will publish the GitHub release for ${releaseTag}.`,
+)
 
-function pushGitHubRelease() {
+function pushGitHubTag() {
   const branch = currentGitBranch()
-  const zipAssets = targets.map(zipFor)
 
   console.log(`\n=== Pushing ${branch} and ${releaseTag} -> ${gitRemote} ===`)
   run("git", ["push", gitRemote, branch])
   run("git", ["push", gitRemote, `refs/tags/${releaseTag}`])
-
-  console.log(`\n=== Publishing GitHub release ${releaseTag} ===`)
-  if (ghReleaseExists(releaseTag)) {
-    run("gh", ["release", "upload", releaseTag, ...zipAssets, "--clobber"])
-  } else {
-    run("gh", [
-      "release",
-      "create",
-      releaseTag,
-      ...zipAssets,
-      "--title",
-      releaseTag,
-      "--notes",
-      `Release ${releaseTag}`,
-    ])
-  }
 }
 
 function currentGitBranch() {
@@ -140,14 +124,6 @@ function currentGitBranch() {
 
 function hasLocalGitTag(tag) {
   const r = spawnSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], {
-    cwd: projectRoot,
-    stdio: "ignore",
-  })
-  return r.status === 0
-}
-
-function ghReleaseExists(tag) {
-  const r = spawnSync("gh", ["release", "view", tag], {
     cwd: projectRoot,
     stdio: "ignore",
   })
