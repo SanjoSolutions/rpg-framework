@@ -2,6 +2,7 @@
 
 # Later
 
+* GitHub sponsor button
 * Support extensions (via NPM packages or some external folder)
 * Refine "Add memory" form
 * Navigating to previous instances (currently only via browser history or direct URL)

@@ -48,6 +48,11 @@ test.describe("Top navigation", () => {
     await nav.getByRole("link", { name: "Settings" }).click()
     await expect(page).toHaveURL(/\/settings$/)
 
+    await expect(page.getByRole("link", { name: "Donate" })).toHaveAttribute(
+      "href",
+      "https://sanjox.itch.io/rpg-framework/purchase",
+    )
+
     await page.getByRole("link", { name: "RPG Framework" }).click()
     await expect(page).toHaveURL(/\/$/)
   })

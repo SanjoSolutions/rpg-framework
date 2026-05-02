@@ -49,6 +49,15 @@ export function Navbar() {
             </Button>
           )}
         </nav>
+        <Button asChild size="sm" className="ml-auto">
+          <a
+            href="https://sanjox.itch.io/rpg-framework/purchase"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Donate
+          </a>
+        </Button>
       </Container>
     </header>
   )
