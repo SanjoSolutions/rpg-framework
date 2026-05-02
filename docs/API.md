@@ -19,8 +19,16 @@ the in-app UI, so anything you can do in the browser, you can do over HTTP.
 
 ## CLI
 
-The `rpg-framework` command is an HTTP client for the same local API. Start the
-app with `pnpm dev`, then run commands from another terminal:
+The built `rpg-framework` command starts the local server when invoked by
+itself:
+
+```bash
+rpg-framework
+```
+
+The same command also works as an HTTP client for the local API when invoked
+with CLI arguments. During development, start the app with `pnpm dev`, then run
+commands from another terminal:
 
 ```bash
 pnpm cli characters list

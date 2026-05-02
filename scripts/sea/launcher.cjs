@@ -5,8 +5,14 @@ const fs = require("node:fs")
 const Module = require("node:module")
 
 const exeDir = path.dirname(process.execPath)
-const appDir = path.join(exeDir, "app")
+const appDir = process.env.RPG_FRAMEWORK_APP_DIR || path.join(exeDir, "app")
 const serverPath = path.join(appDir, "server.js")
+const cliPath = path.join(appDir, "bin", "rpg-framework.cjs")
+const serverCommands = new Set(["serve", "server", "start"])
+const launchedAsScript = process.argv[1] === __filename
+const launchedAsExecutableArg =
+  typeof process.argv[1] === "string" && path.resolve(process.argv[1]) === process.execPath
+const userArgs = process.argv.slice(launchedAsScript || launchedAsExecutableArg ? 2 : 1)
 
 if (!fs.existsSync(serverPath)) {
   console.error(
@@ -29,6 +35,26 @@ if (!process.env.RPG_LEGACY_DB_PATH) {
 }
 
 process.chdir(appDir)
+
+if (userArgs.length > 0 && !serverCommands.has(userArgs[0])) {
+  if (!fs.existsSync(cliPath)) {
+    console.error(
+      `[rpg] missing CLI bundle at ${cliPath}\n` +
+        `       The 'bin' directory must sit inside the application bundle.`,
+    )
+    process.exit(1)
+  }
+  process.argv = [process.execPath, cliPath, ...userArgs]
+  const requireFromCli = Module.createRequire(cliPath)
+  requireFromCli(cliPath)
+  return
+}
+
+if (serverCommands.has(userArgs[0])) {
+  process.argv = launchedAsScript
+    ? [process.execPath, process.argv[1], ...userArgs.slice(1)]
+    : [process.execPath, ...userArgs.slice(1)]
+}
 
 const requireFromApp = Module.createRequire(serverPath)
 requireFromApp(serverPath)

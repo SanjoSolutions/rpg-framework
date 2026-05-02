@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 const execFileAsync = promisify(execFile)
 const cliPath = resolve(process.cwd(), "bin/rpg-framework.mjs")
+const launcherPath = resolve(process.cwd(), "scripts/sea/launcher.cjs")
 
 interface CapturedRequest {
   method: string
@@ -166,11 +167,64 @@ describe("rpg-framework CLI", () => {
   })
 })
 
+describe("SEA launcher", () => {
+  it("starts the bundled server when called with no arguments", async () => {
+    const appDir = await createFakeBundledApp()
+
+    const { stdout } = await runLauncher(appDir, [])
+
+    expect(JSON.parse(stdout)).toEqual({ kind: "server", args: [] })
+  })
+
+  it("starts the bundled server with explicit server commands", async () => {
+    const appDir = await createFakeBundledApp()
+
+    const { stdout } = await runLauncher(appDir, ["serve"])
+
+    expect(JSON.parse(stdout)).toEqual({ kind: "server", args: [] })
+  })
+
+  it("runs the bundled CLI when arguments are present", async () => {
+    const appDir = await createFakeBundledApp()
+
+    const { stdout } = await runLauncher(appDir, ["characters", "list"])
+
+    expect(JSON.parse(stdout)).toEqual({ kind: "cli", args: ["characters", "list"] })
+  })
+})
+
 async function runCli(baseUrl: string, args: string[]) {
   return execFileAsync(process.execPath, [cliPath, "--base-url", baseUrl, ...args], {
     cwd: process.cwd(),
     env: { ...process.env, NO_COLOR: "1" },
   })
+}
+
+async function runLauncher(appDir: string, args: string[]) {
+  return execFileAsync(process.execPath, [launcherPath, ...args], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NO_COLOR: "1",
+      RPG_FRAMEWORK_APP_DIR: appDir,
+    },
+  })
+}
+
+async function createFakeBundledApp() {
+  const appDir = await mkdtemp(join(tmpdir(), "rpg-launcher-"))
+  cleanupTasks.push(() => rm(appDir, { recursive: true, force: true }))
+  await mkdir(join(appDir, "bin"), { recursive: true })
+  await writeFile(
+    join(appDir, "server.js"),
+    "console.log(JSON.stringify({ kind: 'server', args: process.argv.slice(2) }))\n",
+  )
+  await writeFile(join(appDir, "package.json"), '{ "type": "commonjs" }\n')
+  await writeFile(
+    join(appDir, "bin", "rpg-framework.cjs"),
+    "console.log(JSON.stringify({ kind: 'cli', args: process.argv.slice(2) }))\n",
+  )
+  return appDir
 }
 
 async function startServer(

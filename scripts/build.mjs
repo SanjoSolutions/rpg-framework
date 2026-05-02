@@ -278,6 +278,15 @@ async function stageApp(outDir, cfg) {
     recursive: true,
     verbatimSymlinks: true,
   }).catch(() => {}) // public/ may not exist
+  await cp(join(projectRoot, "bin"), join(appDir, "bin"), {
+    recursive: true,
+    verbatimSymlinks: true,
+  })
+  await cp(
+    join(projectRoot, "node_modules", "commander"),
+    join(appDir, "node_modules", "commander"),
+    { recursive: true },
+  )
 
   // 3. Strip dev/source files that next's standalone tracer dragged in.
   //    The runtime only needs server.js, .next/, public/, node_modules/.
@@ -360,6 +369,14 @@ function readmeFor(target, cfg) {
       ? `  Double-click rpg-framework.exe`
       : `  Double-click rpg-framework (or run ./rpg-framework in a terminal)`,
     `  Then open http://localhost:3000 in your browser.`,
+    ``,
+    `Command line usage:`,
+    isWin
+      ? `  rpg-framework.exe characters list`
+      : `  ./rpg-framework characters list`,
+    isWin
+      ? `  rpg-framework.exe api GET /api/settings`
+      : `  ./rpg-framework api GET /api/settings`,
     ``,
     `Your characters, scenarios, and saved audio are kept here:`,
     isWin
