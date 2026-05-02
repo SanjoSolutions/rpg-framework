@@ -5,6 +5,12 @@ import { join } from "node:path"
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3210)
 const BASE_URL = `http://127.0.0.1:${PORT}`
+const DEFAULT_WEB_SERVER_COMMAND =
+  process.env.PLAYWRIGHT_MODE === "prod"
+    ? `NEXT_PUBLIC_E2E=1 pnpm exec next build --webpack && pnpm exec next start -H 127.0.0.1 --port ${PORT}`
+    : `pnpm exec next dev -H 127.0.0.1 --port ${PORT}`
+const IS_PRODUCTION_SERVER =
+  process.env.PLAYWRIGHT_MODE === "prod" || process.env.PLAYWRIGHT_MODE === "dist"
 
 // Each test run gets a fresh SQLite database so tests are deterministic and
 // never touch the developer's data/rpg.sqlite.
@@ -30,9 +36,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      process.env.PLAYWRIGHT_MODE === "prod"
-        ? `NEXT_PUBLIC_E2E=1 pnpm exec next build --webpack && pnpm exec next start -H 127.0.0.1 --port ${PORT}`
-        : `pnpm exec next dev -H 127.0.0.1 --port ${PORT}`,
+      process.env.PLAYWRIGHT_WEB_SERVER_COMMAND ?? DEFAULT_WEB_SERVER_COMMAND,
     url: BASE_URL,
     reuseExistingServer: false,
     timeout: 300_000,
@@ -40,8 +44,8 @@ export default defineConfig({
     stderr: "pipe",
     env: {
       RPG_DB_PATH: TEST_DB_PATH,
-      NODE_ENV:
-        process.env.PLAYWRIGHT_MODE === "prod" ? "production" : "development",
+      PORT: String(PORT),
+      NODE_ENV: IS_PRODUCTION_SERVER ? "production" : "development",
       NEXT_PUBLIC_E2E: "1",
     },
   },
