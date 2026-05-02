@@ -899,7 +899,7 @@ export function ScenarioPlay({
         )}
       </div>
       {error && <div className="px-6 pb-2 text-sm text-destructive">{error}</div>}
-      <form onSubmit={sendUserMessage} className="border-t border-border px-6 py-3 space-y-2">
+      <form onSubmit={sendUserMessage} className="border-t border-border py-3 space-y-2">
         <div className="flex items-stretch gap-2">
           <select
             value={messageRole}

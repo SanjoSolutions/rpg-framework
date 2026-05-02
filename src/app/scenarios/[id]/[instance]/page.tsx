@@ -44,7 +44,7 @@ export default async function PlayScenarioInstancePage({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-6 pt-6 pb-3 border-b border-border flex items-center justify-between gap-4">
+      <div className="pt-6 pb-3 border-b border-border flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold truncate">
             {scenario.name}
