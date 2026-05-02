@@ -40,37 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# model files (stored in ~/.chat-buddy-models/, outside project root)
-models/
-*.safetensors
-
-# generated images/videos
-/output/
-/input/
-
-# pre-generated companion photos and videos
-/public/photos/
-/public/videos/
-/public/profiles/
-
-# prompt-snippet test images
-/public/prompt-snippet-tests/
-
-# staged media uploads
-/public/uploads/
-
-# photo review data
-**/photo-reviews.json
-
-# LoRA dataset candidate images (large, generated locally)
-data/lora-datasets/*/candidates/
-
 # cached profile image
 /.cache/
 
-# RPG runtime data (SQLite + cached audio)
+# RPG runtime data (SQLite)
 /data/
-/public/audio/
 
 # electron
 electron/dist/
@@ -119,12 +93,8 @@ e2e/.auth/
 # local scratch
 a.txt
 /experiment-results/
-GEMINI.md
 # temporary screenshots
 /*.png
 
 /.tmp
 /.worktrees/
-
-# MediaPipe WASM files (copied from node_modules by postinstall)
-/public/mediapipe/
