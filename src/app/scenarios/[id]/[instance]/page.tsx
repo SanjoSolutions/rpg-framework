@@ -43,7 +43,7 @@ export default async function PlayScenarioInstancePage({
     : null
 
   return (
-    <div className="mx-auto max-w-4xl h-full flex flex-col">
+    <div className="h-full flex flex-col">
       <div className="px-6 pt-6 pb-3 border-b border-border flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold truncate">

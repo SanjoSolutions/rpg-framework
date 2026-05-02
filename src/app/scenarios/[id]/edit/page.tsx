@@ -16,7 +16,7 @@ export default async function EditScenarioPage({
   if (!scenario) notFound()
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <h1 className="text-2xl font-bold">Edit scenario</h1>
       <ScenarioForm
         mode="edit"

@@ -36,7 +36,7 @@ export default function SettingsPage() {
   const showFeaturesSection = showRequireConsent || showMemories || showLearnNames
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
+    <div className="py-10 space-y-8">
       <h1 className="text-2xl font-bold">Settings</h1>
 
       <section className="space-y-2">

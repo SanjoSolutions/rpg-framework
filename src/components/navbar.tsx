@@ -1,5 +1,6 @@
 "use client"
 
+import { Container } from "@/components/container"
 import { Button } from "@/components/ui/button"
 import { useSettings } from "@/hooks/use-settings"
 import { cn } from "@/lib/utils"
@@ -22,7 +23,7 @@ export function Navbar() {
   )
   return (
     <header className="border-b border-border">
-      <div className="flex items-center gap-6 px-6 py-3">
+      <Container className="flex items-center gap-6 py-3">
         <Link href="/" className="font-semibold tracking-tight">
           RPG Framework
         </Link>
@@ -48,7 +49,7 @@ export function Navbar() {
             </Button>
           )}
         </nav>
-      </div>
+      </Container>
     </header>
   )
 }

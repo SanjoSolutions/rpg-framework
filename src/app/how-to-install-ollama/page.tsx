@@ -2,9 +2,10 @@ export const metadata = {
   title: "How to install Ollama",
 }
 
+
 export default function HowToInstallOllamaPage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <h1 className="text-2xl font-bold">How to install Ollama</h1>
       <ol className="space-y-3 list-decimal pl-5 text-sm">
         <li>

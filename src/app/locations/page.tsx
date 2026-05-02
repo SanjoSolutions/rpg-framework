@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 export default function LocationsPage() {
   const locations = listLocations()
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Locations</h1>
         <Button asChild>

@@ -36,7 +36,7 @@ function SetupPageInner() {
   )
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
+    <div className="py-10 space-y-8">
       <header className="space-y-2">
         <h1 className="text-2xl font-bold">Setup</h1>
       </header>

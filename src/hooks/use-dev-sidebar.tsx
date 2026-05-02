@@ -1,6 +1,14 @@
 "use client"
 
-import { createContext, useCallback, useContext, useSyncExternalStore, type ReactNode } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+  useState,
+  type ReactNode,
+} from "react"
 
 const RAW_KEY = "rpg-show-raw-messages"
 const COLLAPSED_KEY = "rpg-dev-sidebar-collapsed"
@@ -26,6 +34,14 @@ function readBool(key: string): boolean {
   }
 }
 
+function readBoolDefaultTrue(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== "false"
+  } catch {
+    return true
+  }
+}
+
 function readBoolServer(): boolean {
   return false
 }
@@ -35,7 +51,7 @@ function readRaw() {
 }
 
 function readCollapsed() {
-  return readBool(COLLAPSED_KEY)
+  return readBoolDefaultTrue(COLLAPSED_KEY)
 }
 
 function readMemories() {
@@ -55,6 +71,7 @@ interface DevSidebarState {
   toggleShowRequestInternals: () => void
   collapsed: boolean
   toggleCollapsed: () => void
+  sidebarReady: boolean
 }
 
 const DevSidebarContext = createContext<DevSidebarState | null>(null)
@@ -69,7 +86,31 @@ function toggle(key: string) {
   }
 }
 
-export function DevSidebarProvider({ children }: { children: ReactNode }) {
+function writeCookie(key: string, value: boolean) {
+  document.cookie = `${key}=${String(value)}; path=/; max-age=31536000; samesite=lax`
+}
+
+function toggleDefaultTrue(key: string) {
+  try {
+    const next = localStorage.getItem(key) === "false"
+    localStorage.setItem(key, String(next))
+    writeCookie(key, next)
+    notify()
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function DevSidebarProvider({
+  children,
+  initialCollapsed,
+  initialCollapsedKnown,
+}: {
+  children: ReactNode
+  initialCollapsed: boolean
+  initialCollapsedKnown: boolean
+}) {
+  const [hydrated, setHydrated] = useState(false)
   const showRawMessages = useSyncExternalStore(subscribe, readRaw, readBoolServer)
   const showMemories = useSyncExternalStore(subscribe, readMemories, readBoolServer)
   const showRequestInternals = useSyncExternalStore(
@@ -77,12 +118,20 @@ export function DevSidebarProvider({ children }: { children: ReactNode }) {
     readRequestInternals,
     readBoolServer,
   )
-  const collapsed = useSyncExternalStore(subscribe, readCollapsed, readBoolServer)
+  const collapsed = useSyncExternalStore(
+    subscribe,
+    readCollapsed,
+    () => initialCollapsed,
+  )
 
   const toggleShowRawMessages = useCallback(() => toggle(RAW_KEY), [])
   const toggleShowMemories = useCallback(() => toggle(MEMORIES_KEY), [])
   const toggleShowRequestInternals = useCallback(() => toggle(REQUEST_INTERNALS_KEY), [])
-  const toggleCollapsed = useCallback(() => toggle(COLLAPSED_KEY), [])
+  const toggleCollapsed = useCallback(() => toggleDefaultTrue(COLLAPSED_KEY), [])
+
+  useEffect(() => {
+    setHydrated(true)
+  }, [])
 
   return (
     <DevSidebarContext.Provider
@@ -95,6 +144,7 @@ export function DevSidebarProvider({ children }: { children: ReactNode }) {
         toggleShowRequestInternals,
         collapsed,
         toggleCollapsed,
+        sidebarReady: initialCollapsedKnown || hydrated,
       }}
     >
       {children}

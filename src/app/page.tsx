@@ -3,7 +3,7 @@ import Link from "next/link"
 
 export default function Home() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16 space-y-10">
+    <div className="py-16 space-y-10">
       <FirstTimeSetupRedirect />
       <header className="space-y-3">
         <h1 className="text-4xl font-bold tracking-tight">RPG Framework</h1>

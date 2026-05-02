@@ -14,7 +14,7 @@ export default async function EditCharacterPage({
   if (!character) notFound()
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <h1 className="text-2xl font-bold">Edit character</h1>
       <CharacterForm mode="edit" character={character} />
     </div>

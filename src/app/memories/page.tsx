@@ -10,7 +10,7 @@ export default function MemoriesPage() {
   const locations = listLocations()
   const memories = listAllMemories()
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Memories</h1>
         <p className="text-sm text-muted-foreground mt-1">

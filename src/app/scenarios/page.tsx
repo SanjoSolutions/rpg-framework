@@ -11,7 +11,7 @@ export default function ScenariosPage() {
   const locationsById = new Map(listLocations().map((l) => [l.id, l]))
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 space-y-6">
+    <div className="py-10 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Scenarios</h1>
         <Button asChild>

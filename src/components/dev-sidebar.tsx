@@ -16,12 +16,15 @@ export function DevSidebar() {
     toggleShowRequestInternals,
     collapsed,
     toggleCollapsed,
+    sidebarReady,
   } = useDevSidebar()
   const { memoriesEnabled } = useSettings()
 
+  if (!sidebarReady) return null
+
   if (collapsed) {
     return (
-      <aside className="w-10 shrink-0 border-l border-border bg-muted/40 flex flex-col items-center pt-2">
+      <aside className="mt-2 mr-2 rounded-md border border-border bg-muted p-1 shadow-sm">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -35,7 +38,7 @@ export function DevSidebar() {
   }
 
   return (
-    <aside className="w-64 shrink-0 border-l border-border bg-muted/40 p-4 text-sm">
+    <aside className="h-full w-64 shrink-0 border-l border-border bg-muted p-4 text-sm">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold">Dev</h2>
         <Button
